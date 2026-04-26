@@ -1,8 +1,9 @@
 ﻿using Plugin.BLE;
 using Plugin.BLE.Abstractions.Contracts;
 using Plugin.BLE.Abstractions.EventArgs;
-using System.Collections.ObjectModel;
 using System.Text;
+using Plugin.BLE.Abstractions;
+
 
 #if ANDROID
 using Android;
@@ -16,42 +17,37 @@ namespace OilDetectorApp;
 public partial class MainPage : ContentPage
 {
     private readonly Guid SERVICE_UUID = Guid.Parse("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
-    private readonly Guid TX_CHARACTERISTIC_UUID = Guid.Parse("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
     private readonly Guid RX_CHARACTERISTIC_UUID = Guid.Parse("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+    private readonly Guid TX_CHARACTERISTIC_UUID = Guid.Parse("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
 
     private IBluetoothLE _bluetoothLE;
     private IAdapter _adapter;
     private IDevice _connectedDevice;
     private ICharacteristic _notifyCharacteristic;
+    private ICharacteristic _writeCharacteristic;
 
-    private bool _isConnecting = false;
     private bool _isScanning = false;
-
-    private int _messageCounter = 0;
+    private bool _isConnecting = false;
+    private bool _isSendingCommand = false;
 
     #region Android Permission Request
-
+    #if ANDROID
     private async Task CheckAndRequestPermissions()
     {
-#if ANDROID
-        var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
 
-        if (status != PermissionStatus.Granted)
+        var locationPermission = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
+        if (locationPermission != PermissionStatus.Granted)
         {
-            status = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+            await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
         }
 
-        if (status == PermissionStatus.Granted)
+        var BlePermission = await Permissions.CheckStatusAsync<Permissions.Bluetooth>();
+        if (BlePermission != PermissionStatus.Granted)
         {
-            AddDataToUI("✅ Разрешения получены");
+            await Permissions.RequestAsync<Permissions.Bluetooth>();
         }
-        else
-        {
-            AddDataToUI("⚠️ Разрешения не получены");
-        }
-#endif
     }
-
+    #endif
     #endregion
 
     public MainPage()
@@ -72,7 +68,6 @@ public partial class MainPage : ContentPage
         _bluetoothLE = CrossBluetoothLE.Current;
         _adapter = CrossBluetoothLE.Current.Adapter;
 
-        _adapter.DeviceDiscovered += OnDeviceDiscovered;
         _adapter.DeviceConnected += OnDeviceConnected;
         _adapter.DeviceDisconnected += OnDeviceDisconnected;
 
@@ -83,25 +78,40 @@ public partial class MainPage : ContentPage
     {
         if (_bluetoothLE.State == BluetoothState.On)
         {
-            UpdateStatus("Bluetooth включен", Colors.Green);
+            UpdateStatus("Bluetooth включен");
         }
         else
         {
-            UpdateStatus("Bluetooth выключен", Colors.Red);
+            UpdateStatus("Bluetooth выключен");
         }
     }
 
-    private void UpdateStatus(string message, Color color)
+    private void UpdateStatus(string message, bool showBorder=false)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
             if (StatusLabel != null)
             {
                 StatusLabel.Text = message;
-                StatusLabel.TextColor = color;
+                StatusLabel.TextColor = (Color)Resources["ColorTextSecondary"];
+
+                if (showBorder) StatusBorder.StrokeThickness = 3.0f;
+                else StatusBorder.StrokeThickness = 0.0f;
             }
         });
     }
+
+
+    // ========== СООБЩЕНИЕ, ЧТО УСТРОЙСТВО НЕ НАЙДЕНО ==========
+    private void SendNotFound()
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            UpdateStatus("Поиск устройства...");
+            AddDataToUI("❗ Убедитесь, что устройство включено. Продолжаем поиск...🔎");
+        });
+    }
+
 
     private void AddDataToUI(string data)
     {
@@ -115,7 +125,7 @@ public partial class MainPage : ContentPage
                 DataContainer.Children.Clear();
             }
 
-            var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            var timestamp = DateTime.Now.ToString("HH:mm:ss");
             var dataLabel = new Label
             {
                 Text = $"[{timestamp}] {data}",
@@ -126,97 +136,106 @@ public partial class MainPage : ContentPage
 
             DataContainer.Children.Add(dataLabel);
 
+            // ✅ Ограничиваем количество элементов
+            while (DataContainer.Children.Count > 20)
+            {
+                // Удаляем самый старый элемент (первый в списке)
+                DataContainer.Children.RemoveAt(0);
+            }
+
             if (DataScrollView != null)
             {
                 MainThread.BeginInvokeOnMainThread(async () =>
                 {
                     await Task.Delay(50);
+                    // Скролл в самый низ
                     await DataScrollView.ScrollToAsync(dataLabel, ScrollToPosition.End, true);
                 });
             }
-
-            _messageCounter++;
-            if (CounterLabel != null)
-            {
-                CounterLabel.Text = $"Получено: {_messageCounter} сообщений";
-            }
         });
     }
+
 
     // ========== АВТОМАТИЧЕСКОЕ ПОДКЛЮЧЕНИЕ ==========
     private async Task AutoConnectToDevice()
     {
         // Ждем включения Bluetooth
-        if (_bluetoothLE.State != BluetoothState.On)
+        UpdateStatus("Ожидание Bluetooth...");
+        while (true)
         {
-            UpdateStatus("Ожидание включения Bluetooth...", Colors.Orange);
-            await Task.Delay(2000);
-
             if (_bluetoothLE.State != BluetoothState.On)
             {
-                UpdateStatus("Включите Bluetooth!", Colors.Red);
-                return;
+                await Task.Delay(2000);
             }
-        }
-
-        UpdateStatus("Поиск ESP32...", Colors.Orange);
-        AddDataToUI("🔍 Начинаю автоматический поиск ESP32...");
-
-        // Сканируем 5 секунд
-        _isScanning = true;
-        await _adapter.StartScanningForDevicesAsync();
-        await Task.Delay(5000);
-        await _adapter.StopScanningForDevicesAsync();
-        _isScanning = false;
-
-        // Ищем ESP32 среди найденных устройств
-        var devices = _adapter.DiscoveredDevices;
-        IDevice targetDevice = null;
-
-        if (devices == null || devices.Count == 0)
-        {
-            UpdateStatus("Устройства не найдены!", Colors.Red);
-            AddDataToUI("❌ Устройства не найдены. Убедитесь, что ESP32 включен.");
-            return;
-        }
-
-        foreach (var device in devices)
-        {
-            // ✅ ПРОВЕРКА: device не должен быть null
-            if (device == null) continue;
-
-            // ✅ ПРОВЕРКА: Name может быть null, используем безопасное получение
-            string deviceName = device.Name;
-            if (string.IsNullOrEmpty(deviceName)) continue;
-
-            // Ищем по имени ESP32
-            if (!string.IsNullOrEmpty(device.Name) &&
-                (device.Name.Contains("ESP32") ||
-                 device.Name.Contains("Oil_Detector") ||
-                 device.Name.Contains("TSL2561")))
-            {
-                targetDevice = device;
-                AddDataToUI($"✅ Найден ESP32: {device.Name}");
+            else {
                 break;
             }
         }
 
-        if (targetDevice == null)
-        {
-            UpdateStatus("ESP32 не найден!", Colors.Red);
-            AddDataToUI("❌ ESP32 не найден. Убедитесь, что устройство включено.");
-            return;
-        }
+        UpdateStatus("Поиск устройства...");
 
-        // Подключаемся
-        await ConnectToDevice(targetDevice);
+
+        // Создаем фильтр для сканирования по Service UUID
+        var scanFilterOptions = new ScanFilterOptions
+        {
+            DeviceNames = ["ESP32_Oil_Detector_DonskoyPN"],
+        };
+
+        while (true)
+        {
+            // Сканируем 3 секунды
+            _adapter.ScanTimeout = 3000;
+            await _adapter.StartScanningForDevicesAsync();
+            await Task.Delay(3000);
+            await _adapter.StopScanningForDevicesAsync();
+
+            // Ищем ESP32 среди найденных устройств
+            var devices = _adapter.DiscoveredDevices;
+            IDevice targetDevice = null;
+
+            if (devices == null || devices.Count == 0)
+            {
+                SendNotFound();
+                continue;
+            }
+
+            foreach (var device in devices)
+            {
+                // ✅ ПРОВЕРКА: device не должен быть null
+                if (device == null) continue;
+
+                // ✅ ПРОВЕРКА: Name может быть null, используем безопасное получение
+                string deviceName = device.Name;
+                if (string.IsNullOrEmpty(deviceName)) continue;
+
+                // Ищем по имени ESP32
+                if (!string.IsNullOrEmpty(device.Name) &&
+                    (device.Name.Contains("ESP32") ||
+                     device.Name.Contains("Oil_Detector")))
+                {
+                    targetDevice = device;
+                    break;
+                }
+            }
+
+            if (targetDevice == null)
+            {
+                SendNotFound();
+                continue;
+            }
+
+            // Подключаемся
+            await ConnectToDevice(targetDevice);
+            break;
+        }
     }
 
+
+    // ========== ПОДКЛЮЧЕНИЕ К УСТРОЙСТВУ ==========
     private async Task ConnectToDevice(IDevice device)
     {
         if (_isConnecting)
         {
-            AddDataToUI("⚠️ Уже выполняется подключение...");
             return;
         }
 
@@ -224,19 +243,16 @@ public partial class MainPage : ContentPage
 
         try
         {
-            UpdateStatus($"Подключение к {device.Name}...", Colors.Orange);
-            AddDataToUI($"🔌 Подключаюсь к {device.Name}...");
+            UpdateStatus($"Подключение...");
 
             // Подключаемся
             await _adapter.ConnectToDeviceAsync(device);
             _connectedDevice = device;
 
             // ✅ УВЕЛИЧИВАЕМ MTU (важно сделать до получения сервисов)
-            AddDataToUI("📏 Запрос увеличения MTU...");
             try
             {
                 var mtu = await _connectedDevice.RequestMtuAsync(517);
-                AddDataToUI($"✅ MTU установлен: {mtu} байт");
             }
             catch (Exception ex)
             {
@@ -248,7 +264,6 @@ public partial class MainPage : ContentPage
 
             // Получаем сервисы
             var services = await _connectedDevice.GetServicesAsync();
-            AddDataToUI($"📋 Найдено сервисов: {services.Count}");
 
             // Ищем наш сервис по UUID
             var targetService = services.FirstOrDefault(s => s.Id == SERVICE_UUID);
@@ -259,8 +274,6 @@ public partial class MainPage : ContentPage
                 return;
             }
 
-            AddDataToUI($"✅ Найден сервис: {targetService.Id}");
-
             // Получаем характеристики
             var characteristics = await targetService.GetCharacteristicsAsync();
 
@@ -269,27 +282,29 @@ public partial class MainPage : ContentPage
 
             if (txCharacteristic == null)
             {
-                AddDataToUI($"❌ TX характеристика не найдена!");
+                AddDataToUI("❌ TX характеристика не найдена!");
+                return;
+            }
+
+            // Ищем RX характеристику
+            var rxCharacteristic = characteristics.FirstOrDefault(c => c.Id == RX_CHARACTERISTIC_UUID);
+
+            if (rxCharacteristic == null)
+            {
+                AddDataToUI("❌ RX характеристика не найдена!");
                 return;
             }
 
             _notifyCharacteristic = txCharacteristic;
+            _writeCharacteristic = rxCharacteristic;
             _notifyCharacteristic.ValueUpdated += OnDataReceived;
 
             // Подписываемся на уведомления
             await _notifyCharacteristic.StartUpdatesAsync();
-            AddDataToUI($"✅ Подписка на уведомления активирована!");
-
-            UpdateStatus("Подключен", Colors.Green);
-            ConnectButton.IsEnabled = false;
-            DisconnectButton.IsEnabled = true;
-            ScanButton.IsEnabled = false;
-
-            AddDataToUI("🟢 Подключено! Ожидание данных от ESP32...");
         }
         catch (Exception ex)
         {
-            UpdateStatus("Ошибка подключения", Colors.Red);
+            UpdateStatus("Ошибка подключения");
             AddDataToUI($"❌ Ошибка: {ex.Message}");
 
             if (_notifyCharacteristic != null)
@@ -315,26 +330,87 @@ public partial class MainPage : ContentPage
 
             if (!string.IsNullOrWhiteSpace(data))
             {
-                AddDataToUI(data);
+                if (data.Contains("Led"))
+                {
+                    string[] refinedData = data.Split("|");
+                    // Создаём словарь
+                    var dict = new Dictionary<string, string>();
+                    foreach (string pair in refinedData)
+                    {
+                        string[] pairValues = pair.Split(':');
+                        dict[pairValues[0]] = pairValues[1];
+                    }
+
+                    string threshold = dict["Threshold"].Replace(".", ",");
+                    string feedString = " ";
+
+                    foreach (string key in dict.Keys)
+                    {
+                        // Ключи датчиков
+                        if (key.Contains("Led"))
+                        {
+                            feedString += key.Replace("Led", "Датчик ") + ": " + dict[key].PadRight(10) + " ";
+                            string lightLevel = dict[key].Replace(".", ",");
+                            switch (key) {
+                                case "Led1":
+                                    if (float.Parse(lightLevel) < float.Parse(threshold))
+                                    {
+                                        SetLedColorWithGradient(Led1, (Color)Resources["ColorLedBlue"]);
+                                    }
+                                    else SetLedColorWithGradient(Led1, (Color)Resources["ColorLedRed"]);
+                                    break;
+                                case "Led2":
+                                    if (float.Parse(lightLevel) < float.Parse(threshold))
+                                    {
+                                        SetLedColorWithGradient(Led2, (Color)Resources["ColorLedBlue"]);
+                                    }
+                                    else SetLedColorWithGradient(Led2, (Color)Resources["ColorLedRed"]);
+                                    break;
+                                case "Led3":
+                                    if (float.Parse(lightLevel) < float.Parse(threshold))
+                                    {
+                                        SetLedColorWithGradient(Led3, (Color)Resources["ColorLedBlue"]);
+                                    }
+                                    else SetLedColorWithGradient(Led3, (Color)Resources["ColorLedRed"]);
+                                    break;
+                                case "Led4":
+                                    if (float.Parse(lightLevel) < float.Parse(threshold))
+                                    {
+                                        SetLedColorWithGradient(Led4, (Color)Resources["ColorLedBlue"]);
+                                    }
+                                    else SetLedColorWithGradient(Led4, (Color)Resources["ColorLedRed"]);
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }
+                    }
+
+                    feedString += "Порог: " + dict["Threshold"] + "\n";
+                    feedString += "Тревога: " + (dict["IsAlarm"] == "true" ? "Да" : "Нет") + "\n";
+                    feedString += "Чувствительность: " + dict["MTreg"] + "\n";
+
+                    if (dict["IsAlarm"] == "true")
+                    {
+                        UpdateStatus("⚠ ОБНАРУЖЕНА НЕФТЬ ⚠", true);
+                    }
+                    else
+                    {
+                        UpdateStatus("✔ Можно работать ✔");
+                    }
+                    AddDataToUI(feedString);
+                }
+                else AddDataToUI(data);
+
             }
         }
     }
 
-    private void OnDeviceDiscovered(object sender, DeviceEventArgs args)
-    {
-        // Не добавляем в список, только логируем для отладки
-        var device = args.Device;
-        if (!string.IsNullOrEmpty(device.Name))
-        {
-            System.Diagnostics.Debug.WriteLine($"Найдено: {device.Name}");
-        }
-    }
-
-    private void OnDeviceConnected(object sender, DeviceEventArgs args)
+    private async void OnDeviceConnected(object sender, DeviceEventArgs args)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            UpdateStatus("Подключен", Colors.Green);
+            UpdateStatus("Подключен");
         });
     }
 
@@ -342,65 +418,26 @@ public partial class MainPage : ContentPage
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            UpdateStatus("Отключен", Colors.Red);
-            ConnectButton.IsEnabled = true;
-            DisconnectButton.IsEnabled = false;
-            ScanButton.IsEnabled = true;
-
-            AddDataToUI("🔴 Отключено от устройства");
+            UpdateStatus("Потеря соединения");
         });
 
         _connectedDevice = null;
         _notifyCharacteristic = null;
 
-        // Автоматически пробуем переподключиться через 5 секунд
-        await Task.Delay(5000);
-        if (_bluetoothLE.State == BluetoothState.On)
+        while (true)
         {
-            AddDataToUI("🔄 Попытка автоматического переподключения...");
-            await AutoConnectToDevice();
-        }
-    }
-
-    // ========== КНОПКИ УПРАВЛЕНИЯ ==========
-    private async void OnScanClicked(object sender, EventArgs e)
-    {
-        await AutoConnectToDevice();
-    }
-
-    private async void OnConnectClicked(object sender, EventArgs e)
-    {
-        await AutoConnectToDevice();
-    }
-
-    private async void OnDisconnectClicked(object sender, EventArgs e)
-    {
-        if (_connectedDevice != null)
-        {
-            if (_notifyCharacteristic != null)
+            // Автоматически пробуем переподключиться через 5 секунд
+            await Task.Delay(5000);
+            if (_connectedDevice != null)
             {
-                _notifyCharacteristic.ValueUpdated -= OnDataReceived;
-                await _notifyCharacteristic.StopUpdatesAsync();
+                break;
             }
-            await _adapter.DisconnectDeviceAsync(_connectedDevice);
-        }
-    }
-
-    private void OnClearClicked(object sender, EventArgs e)
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            if (DataContainer != null && EmptyDataLabel != null)
+            if (_bluetoothLE.State == BluetoothState.On)
             {
-                DataContainer.Children.Clear();
-                EmptyDataLabel.IsVisible = true;
-                _messageCounter = 0;
-                if (CounterLabel != null)
-                {
-                    CounterLabel.Text = "Получено: 0 сообщений";
-                }
+                AddDataToUI("🔄 Попытка автоматического переподключения...");
+                await AutoConnectToDevice();
             }
-        });
+        }
     }
 
     protected override async void OnDisappearing()
@@ -409,6 +446,125 @@ public partial class MainPage : ContentPage
         if (_connectedDevice != null && _adapter != null)
         {
             await _adapter.DisconnectDeviceAsync(_connectedDevice);
+        }
+    }
+
+
+    // ========== ИЗМЕНЕНИЕ ЦВЕТА ДАТЧИКА ==========
+    public void SetLedColorWithGradient(Border led, Color baseColor)
+    {
+        // ✅ Принудительно выполняем в UI потоке
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            // Создаем градиент на основе базового цвета
+            var gradient = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(1, 1)
+            };
+
+            // Цвета градиента: светлый вверху-слева, темный внизу-справа
+            gradient.GradientStops.Add(new GradientStop(baseColor, 0.0f)); // исходный цвет
+            gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.8f), 0.3f));
+            gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.6f), 0.6f));
+            gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.4f), 1.0f)); // самый темный
+
+            led.Background = gradient;
+
+            // Создаем новую тень с цветом свечения
+            led.Shadow = new Shadow
+            {
+                Brush = baseColor,
+                Radius = 16,
+                Offset = new Point(0, 0),
+                Opacity = 1.0f
+            };
+        });
+    }
+
+
+    // ========== ОБРАБОТЧИК ПОЛЗУНКА ЧУВСТВИТЕЛЬНОСТИ ==========
+    private async void SensetivityValueChanged(object sender, ValueChangedEventArgs e)
+    {
+        var slider = (Slider)sender;
+        int newValue = (int)Math.Round(e.NewValue);
+
+        // Обновляем отображаемое значение (если есть Label)
+        SensetivityValueLabel.Text = newValue.ToString();
+
+        // Блокируем повторные вызовы во время отправки
+        if (_isSendingCommand) return;
+        _isSendingCommand = true;
+
+        try
+        {
+            // Формируем команду: T + значение
+            string command = $"T{newValue}";
+
+            // Отправляем на ESP32
+            await SendBLEData(command);
+        }
+        catch (Exception ex)
+        {
+            AddDataToUI($"❌ Ошибка отправки: {ex.Message}");
+        }
+        finally
+        {
+            _isSendingCommand = false;
+        }
+    }
+
+
+    // ========== ОБРАБОТЧИК ПОЛЗУНКА ЧУВСТВИТЕЛЬНОСТИ ==========
+    private async void ThresholdValueChanged(object sender, ValueChangedEventArgs e)
+    {
+        var slider = (Slider)sender;
+        int newValue = (int)Math.Round(e.NewValue);
+
+        // Обновляем отображаемое значение (если есть Label)
+        ThresholdValueLabel.Text = newValue.ToString();
+
+        // Блокируем повторные вызовы во время отправки
+        if (_isSendingCommand) return;
+        _isSendingCommand = true;
+
+        try
+        {
+            // Формируем команду: S + значение
+            string command = $"S{newValue}";
+
+            // Отправляем на ESP32
+            await SendBLEData(command);
+        }
+        catch (Exception ex)
+        {
+            AddDataToUI($"❌ Ошибка отправки: {ex.Message}");
+        }
+        finally
+        {
+            _isSendingCommand = false;
+        }
+    }
+
+    // ========== ОТПРАВКА ДАННЫХ ПО BLE ==========
+    private async Task SendBLEData(string data)
+    {
+        if (_writeCharacteristic == null)
+        {
+            AddDataToUI("❌ BLE характеристика не инициализирована");
+            return;
+        }
+
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(data);
+            await _writeCharacteristic.WriteAsync(bytes);
+            //AddDataToUI($"✅ Чувствительность изменена");
+        }
+        catch (Exception ex)
+        {
+            AddDataToUI($"❌ Ошибка BLE записи: {ex.Message}");
+            throw;
         }
     }
 }
