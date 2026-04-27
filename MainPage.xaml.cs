@@ -47,7 +47,108 @@ public partial class MainPage : ContentPage
             await Permissions.RequestAsync<Permissions.Bluetooth>();
         }
     }
-    #endif
+#endif
+
+#if ANDROID
+    private async Task<bool> EnsurePermissionsAndLocation()
+    {
+        try
+        {
+            var activity = Platform.CurrentActivity;
+            if (activity == null)
+            {
+                AddDataToUI("❌ Activity не найдена");
+                return false;
+            }
+
+            List<string> permissionsToRequest = new List<string>();
+
+            // Для Android 12+ (API 31+)
+            if (OperatingSystem.IsAndroidVersionAtLeast(31))
+            {
+                if (ContextCompat.CheckSelfPermission(activity, Android.Manifest.Permission.BluetoothScan)
+                    != (int)Android.Content.PM.Permission.Granted)
+                {
+                    permissionsToRequest.Add(Android.Manifest.Permission.BluetoothScan);
+                }
+
+                if (ContextCompat.CheckSelfPermission(activity, Android.Manifest.Permission.BluetoothConnect)
+                    != (int)Android.Content.PM.Permission.Granted)
+                {
+                    permissionsToRequest.Add(Android.Manifest.Permission.BluetoothConnect);
+                }
+            }
+
+            // Для всех версий Android — разрешение на геолокацию
+            if (ContextCompat.CheckSelfPermission(activity, Android.Manifest.Permission.AccessFineLocation)
+                != (int)Android.Content.PM.Permission.Granted)
+            {
+                permissionsToRequest.Add(Android.Manifest.Permission.AccessFineLocation);
+            }
+
+            // Запрашиваем разрешения, если есть что запрашивать
+            if (permissionsToRequest.Any())
+            {
+                AddDataToUI($"📱 Запрос {permissionsToRequest.Count} разрешений...");
+                ActivityCompat.RequestPermissions(activity, permissionsToRequest.ToArray(), 1001);
+                await Task.Delay(2000); // Даем время на ответ
+            }
+
+            // Проверяем результат
+            bool allGranted = true;
+
+            if (OperatingSystem.IsAndroidVersionAtLeast(31))
+            {
+                var scanGranted = ContextCompat.CheckSelfPermission(activity, Android.Manifest.Permission.BluetoothScan)
+                    == (int)Android.Content.PM.Permission.Granted;
+                var connectGranted = ContextCompat.CheckSelfPermission(activity, Android.Manifest.Permission.BluetoothConnect)
+                    == (int)Android.Content.PM.Permission.Granted;
+
+                AddDataToUI($"📱 Bluetooth Scan: {(scanGranted ? "✅" : "❌")}");
+                AddDataToUI($"📱 Bluetooth Connect: {(connectGranted ? "✅" : "❌")}");
+
+                allGranted = scanGranted && connectGranted;
+            }
+
+            var locationGranted = ContextCompat.CheckSelfPermission(activity, Android.Manifest.Permission.AccessFineLocation)
+                == (int)Android.Content.PM.Permission.Granted;
+            AddDataToUI($"📱 Location: {(locationGranted ? "✅" : "❌")}");
+
+            allGranted = allGranted && locationGranted;
+
+            if (!allGranted)
+            {
+                AddDataToUI("⚠️ Не все разрешения получены. BLE может не работать.");
+                return false;
+            }
+
+            // Проверяем, включена ли геолокация
+            var locationManager = (Android.Locations.LocationManager)Android.App.Application.Context.GetSystemService(Android.Content.Context.LocationService);
+            var isLocationEnabled = locationManager?.IsLocationEnabled == true;
+
+            if (!isLocationEnabled)
+            {
+                AddDataToUI("❌ Геолокация выключена! Включите в настройках.");
+                AddDataToUI("   Настройки → Местоположение → Включить");
+                return false;
+            }
+
+            AddDataToUI("✅ Все разрешения получены, геолокация включена");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AddDataToUI($"⚠️ Ошибка при проверке разрешений: {ex.Message}");
+            return false;
+        }
+    }
+#else
+private async Task<bool> EnsurePermissionsAndLocation()
+{
+    // Для не-Android платформ всегда true
+    return await Task.FromResult(true);
+}
+#endif
     #endregion
 
     public MainPage()
@@ -56,7 +157,8 @@ public partial class MainPage : ContentPage
         InitializeBluetooth();
 
 #if ANDROID
-        CheckAndRequestPermissions();
+        Loaded += async (s, e) => await CheckAndRequestPermissions();
+        //CheckAndRequestPermissions();
 #endif
 
         // Автоматически начинаем поиск и подключение при запуске
@@ -172,6 +274,15 @@ public partial class MainPage : ContentPage
             }
         }
 
+        // ✅ Проверяем разрешения и геолокацию
+        //var permissionsOk = await EnsurePermissionsAndLocation();
+        //if (!permissionsOk)
+        //{
+        //    AddDataToUI("❌ Недостаточно прав для BLE сканирования");
+        //    UpdateStatus("Ошибка прав");
+        //    return;
+        //}
+
         UpdateStatus("Поиск устройства...");
 
 
@@ -223,7 +334,6 @@ public partial class MainPage : ContentPage
                 SendNotFound();
                 continue;
             }
-
             // Подключаемся
             await ConnectToDevice(targetDevice);
             break;
@@ -386,17 +496,17 @@ public partial class MainPage : ContentPage
                         }
                     }
 
-                    feedString += "Порог: " + dict["Threshold"] + "\n";
-                    feedString += "Тревога: " + (dict["IsAlarm"] == "true" ? "Да" : "Нет") + "\n";
-                    feedString += "Чувствительность: " + dict["MTreg"] + "\n";
+                    //feedString += "Порог: " + dict["Threshold"] + "\n";
+                    //feedString += "Тревога: " + (dict["IsAlarm"] == "true" ? "Да" : "Нет") + "\n";
+                    //feedString += "Чувствительность: " + dict["MTreg"] + "\n";
 
                     if (dict["IsAlarm"] == "true")
                     {
-                        UpdateStatus("⚠ ОБНАРУЖЕНА НЕФТЬ ⚠", true);
+                        UpdateStatus("⚠ ВНИМАНИЕ ⚠ \nТребуется очистка трубопровода", true);
                     }
                     else
                     {
-                        UpdateStatus("✔ Можно работать ✔");
+                        UpdateStatus("✔ Очистка завершена ✔\nТрубопровод готов к герметизации");
                     }
                     AddDataToUI(feedString);
                 }
