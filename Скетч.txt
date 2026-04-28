@@ -47,11 +47,11 @@ const int ALARM_LED_PIN = 19;
 
 // ========== I2C КОНФИГУРАЦИЯ ==========
 // Шина 0 (датчики 1 и 2)
-const int I2C0_SDA = 33;
-const int I2C0_SCL = 32;
+const int I2C0_SDA = 33; //white
+const int I2C0_SCL = 32; // green
 // Шина 1 (датчики 3 и 4)
-const int I2C1_SDA = 26;
-const int I2C1_SCL = 27;
+const int I2C1_SDA = 26; // white
+const int I2C1_SCL = 27; //green
 
 // Адреса BH1750
 const uint8_t BH1750_ADDR_LOW = 0x23;   // ADDR на GND
@@ -62,7 +62,7 @@ const int MAX_SENSORS = 4;
 const int MIN_EXPOSURE = 50;
 const int MAX_EXPOSURE = 3000;
 const int ALARM_CONFIRM_COUNT = 1; // 3 times by default
-const unsigned long CLEAN_DELAY = 5000; // 5000 ms by deafult
+const unsigned long CLEAN_DELAY = 3000; // 5000 ms by deafult
 
 // ========== НАСТРОЙКИ СИМУЛЯЦИИ ДАННЫХ ==========
 bool simulationMode = false;  // false - реальные датчики, true - симуляция
@@ -184,7 +184,7 @@ public:
         // Калибровка: порог = текущее значение + 10
         globalThreshold = currentValue + 10;
         if (globalThreshold > 1000) globalThreshold = 1000;
-        addLogEntry("[" + name + "] Калибровка: новый общий порог " + String(globalThreshold) + " lx");
+        addLogEntry("[" + name + "] Калибровка: новый общий порог " + String(globalThreshold) + " мкм");
     }
     
     // Геттеры
@@ -269,7 +269,7 @@ public:
     
     void setGlobalThreshold(float threshold) {
         globalThreshold = threshold;
-        addLogEntry("Общий порог установлен: " + String(globalThreshold) + " lx");
+        addLogEntry("Общий порог установлен: " + String(globalThreshold) + " мкм");
     }
     
     OilDetector* getSensor(int index) {
@@ -329,16 +329,16 @@ public:
         String status = "=== СТАТУС ДАТЧИКОВ ===\r\n";
         for (int i = 0; i < sensorCount; i++) {
             status += sensors[i]->getName() + ":\r\n";
-            status += "  Fluo: " + String(sensors[i]->getValue(), 1) + " lx\r\n";
+            status += "  Fluo: " + String(sensors[i]->getValue(), 1) + " мкм\r\n";
             status += "  Alarm: " + String(sensors[i]->isAlarm() ? "ON" : "OFF") + "\r\n";
             status += "  Counter: " + String(sensors[i]->getAlarmCounter()) + "/" + String(ALARM_CONFIRM_COUNT) + "\r\n";
-            status += "  Von: " + String(sensors[i]->getValueOn(), 1) + " lx\r\n";
-            status += "  Voff: " + String(sensors[i]->getValueOff(), 1) + " lx\r\n";
+            status += "  Von: " + String(sensors[i]->getValueOn(), 1) + " мкм\r\n";
+            status += "  Voff: " + String(sensors[i]->getValueOff(), 1) + " мкм\r\n";
         }
         status += "=== ОБЩИЕ НАСТРОЙКИ ===\r\n";
-        status += "Global Threshold: " + String(globalThreshold) + " lx\r\n";
+        status += "Global Threshold: " + String(globalThreshold) + " мкм\r\n";
         status += "MTreg: " + String(bh1750_mtreg) + "\r\n";
-        status += "Max range: ~" + String(54612.0 * (69.0 / bh1750_mtreg), 0) + " lx\r\n";
+        status += "Max range: ~" + String(54612.0 * (69.0 / bh1750_mtreg), 0) + " мкм\r\n";
         status += "Exposure time: " + String(uvExposureTime) + " ms\r\n";
         status += "Simulation Mode: " + String(simulationMode ? "ON" : "OFF") + "\r\n";
         status += "======================\r\n";
@@ -369,7 +369,7 @@ void setGlobalThreshold(float threshold) {
     if (threshold < 0) threshold = 0;
     if (threshold > 1000) threshold = 1000;
     globalThreshold = threshold;
-    addLogEntry("Общий порог установлен: " + String(globalThreshold) + " lx");
+    addLogEntry("Общий порог установлен: " + String(globalThreshold) + " мкм");
 }
 
 // ========== ЖУРНАЛ СОБЫТИЙ ==========
@@ -440,6 +440,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
         bh1750_mtreg = 31;
         globalThreshold = 10;
         addLogEntry("BLE клиент подключился");
+        String bleMsg = detectorManager.getBLEMessage();
+        pTxCharacteristic->setValue(bleMsg.c_str());
+        pTxCharacteristic->notify();
     }
     void onDisconnect(BLEServer* pServer) {
         deviceConnected = false;
@@ -467,7 +470,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             else if (cmdStr.equalsIgnoreCase("C")) {
                 calibrateAllSensors();
                 if (deviceConnected) {
-                    pTxCharacteristic->setValue("Calibrated. New threshold: " + String(globalThreshold) + " lx\r\n");
+                    pTxCharacteristic->setValue("Calibrated. New threshold: " + String(globalThreshold) + " мкм\r\n");
                     pTxCharacteristic->notify();
                 }
             }
@@ -478,13 +481,13 @@ class MyCallbacks : public BLECharacteristicCallbacks {
                 if (newThreshold >= 0 && newThreshold <= 1000) {
                     setGlobalThreshold(newThreshold);
                     if (deviceConnected) {
-                        String msg = "Порог установлен на " + String(globalThreshold) + " lx\r\n";
-                        pTxCharacteristic->setValue(msg.c_str());
-                        pTxCharacteristic->notify();
+                        // String msg = "Порог установлен на " + String(globalThreshold) + " мкм\r\n";
+                        // pTxCharacteristic->setValue(msg.c_str());
+                        // pTxCharacteristic->notify();
                     }
                 } else {
                     if (deviceConnected) {
-                        pTxCharacteristic->setValue("Error: threshold must be 0..1000 lx\r\n");
+                        pTxCharacteristic->setValue("Error: threshold must be 0..1000 мкм\r\n");
                         pTxCharacteristic->notify();
                     }
                 }
@@ -496,9 +499,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
                 if (newMtreg >= 31 && newMtreg <= 254) {
                     setGlobalSensitivity(newMtreg);
                     if (deviceConnected) {
-                        String msg = "Чувствительность установлена на " + String(bh1750_mtreg) + "\r\n";
-                        pTxCharacteristic->setValue(msg.c_str());
-                        pTxCharacteristic->notify();
+                        // String msg = "Чувствительность установлена на " + String(bh1750_mtreg) + "\r\n";
+                        // pTxCharacteristic->setValue(msg.c_str());
+                        // pTxCharacteristic->notify();
                     }
                 } else {
                     if (deviceConnected) {

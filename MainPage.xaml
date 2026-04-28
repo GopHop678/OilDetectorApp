@@ -26,10 +26,10 @@
             StrokeThickness="3">
         <Border.Stroke>
             <LinearGradientBrush x:Name="AnimatedGradient" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#808080" Offset="0.0" />
+                <GradientStop Color="DarkBlue" Offset="0.0" />
                 <GradientStop Color="#FFFFFF" Offset="0.3" />
                 <GradientStop Color="#FFFFFF" Offset="0.7" />
-                <GradientStop Color="#808080" Offset="1.0" />
+                <GradientStop Color="DarkBlue" Offset="1.0" />
             </LinearGradientBrush>
         </Border.Stroke>
 

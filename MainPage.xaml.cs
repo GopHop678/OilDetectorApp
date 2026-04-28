@@ -14,7 +14,7 @@ using Microsoft.Maui.ApplicationModel;
 
 namespace OilDetectorApp;
 
-public partial class MainPage : ContentPage
+public partial class MainPage : ContentPage, IDisposable
 {
     private readonly Guid SERVICE_UUID = Guid.Parse("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
     private readonly Guid RX_CHARACTERISTIC_UUID = Guid.Parse("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -29,8 +29,14 @@ public partial class MainPage : ContentPage
     private bool _isConnecting = false;
     private bool _isSendingCommand = false;
 
+    // Для отслеживания таймаута данных
+    private DateTime _lastDataReceivedTime;
+    private Timer _dataTimeoutTimer;
+    private const int DATA_TIMEOUT_SECONDS = 10;
+
+
     #region Android Permission Request
-    #if ANDROID
+#if ANDROID
     private async Task CheckAndRequestPermissions()
     {
 
@@ -165,6 +171,14 @@ private async Task<bool> EnsurePermissionsAndLocation()
         Loaded += async (s, e) => await AutoConnectToDevice();
     }
 
+    public void Dispose()
+    {
+        // Принудительная чистка
+        _dataTimeoutTimer?.Dispose();
+        _notifyCharacteristic?.StopUpdatesAsync().ConfigureAwait(false);
+        _adapter?.DisconnectDeviceAsync(_connectedDevice).ConfigureAwait(false);
+    }
+
     private void InitializeBluetooth()
     {
         _bluetoothLE = CrossBluetoothLE.Current;
@@ -188,6 +202,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
         }
     }
 
+
+    // ========== ПОМЕНЯТЬ СТАТУС СОЕДИНЕНИЯ ==========
     private void UpdateConnectionStatus(string message)
     {
         MainThread.BeginInvokeOnMainThread(() =>
@@ -200,25 +216,39 @@ private async Task<bool> EnsurePermissionsAndLocation()
         });
     }
 
-    private void UpdateAlarmStatus(string message, bool isAlarm=false)
+
+    // ========== ПОМЕНЯТЬ СТАТУС ТРЕВОГИ ==========
+    private void UpdateAlarmStatus(bool isAlarm=false)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
+            var animatedGradient = AnimatedGradient;
+
+
             if (AlarmStatusLabel != null)
             {
-                AlarmStatusLabel.Text = message;
                 AlarmStatusLabel.TextColor = (Color)Resources["ColorTextMain"];
 
                 if (isAlarm)
                 {
+                    AlarmStatusLabel.Text = "⚠ ВНИМАНИЕ ⚠ \nТребуется очистка трубопровода"; 
                     AlarmStatusBorder.Stroke = Colors.Yellow;
                     AlarmStatusBorder.Background = (Color)Resources["ColorLedRed"];
+
+                    // Красная рамка при тревоге
+                    animatedGradient.GradientStops[0].Color = Colors.IndianRed;
+                    animatedGradient.GradientStops[3].Color = Colors.IndianRed;
                 }
                 else
                 {
+                    AlarmStatusLabel.Text = "✔ Очистка завершена ✔\nТрубопровод готов к герметизации"; 
                     AlarmStatusBorder.Stroke = (Color)Resources["ColorTextThird"];
                     //AlarmStatusBorder.Background = (Color)Resources["ColorLedBlue"];
                     AlarmStatusBorder.Background = Colors.White;
+
+                    // Обычная рамка при отсутствии тревоги
+                    animatedGradient.GradientStops[0].Color = Colors.DarkBlue;
+                    animatedGradient.GradientStops[3].Color = Colors.DarkBlue;
                 }
             }
         });
@@ -236,6 +266,9 @@ private async Task<bool> EnsurePermissionsAndLocation()
     }
 
 
+    // ===================================================
+    // ========== ДОБАВЛЕНИЕ ДАННЫХ В КОНСОЛЬ ============
+    // ===================================================
     private void AddDataToUI(string data)
     {
         MainThread.BeginInvokeOnMainThread(() =>
@@ -295,7 +328,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             }
         }
 
-        // ✅ Проверяем разрешения и геолокацию
+        // ✅ Проверяем разрешения и геолокацию для отладки
         //var permissionsOk = await EnsurePermissionsAndLocation();
         //if (!permissionsOk)
         //{
@@ -315,10 +348,12 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
         while (true)
         {
-            // Сканируем 3 секунды
+            // Настройка таймаута сканирования BL устройств
             _adapter.ScanTimeout = 3000;
+
+            // Сканируем 3 секунды
             await _adapter.StartScanningForDevicesAsync();
-            await Task.Delay(3000);
+            //await Task.Delay(3000);
             await _adapter.StopScanningForDevicesAsync();
 
             // Ищем ESP32 среди найденных устройств
@@ -432,6 +467,11 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             // Подписываемся на уведомления
             await _notifyCharacteristic.StartUpdatesAsync();
+
+            _isConnecting = false;
+
+            // ✅ ЗАПУСКАЕМ МОНИТОРИНГ ТАЙМАУТА
+            StartTimeoutMonitor();
         }
         catch (Exception ex)
         {
@@ -443,16 +483,22 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 _notifyCharacteristic.ValueUpdated -= OnDataReceived;
                 _notifyCharacteristic = null;
             }
-            _connectedDevice = null;
-        }
-        finally
-        {
+
             _isConnecting = false;
+            _connectedDevice = null;
+            await TryReconnect();
         }
     }
 
+
+    // ===================================================
+    // ========== ДЕЙТСВИЯ ПРИ ПОЛУЧЕНИИ ДАННЫХ ==========
+    // ===================================================
     private void OnDataReceived(object sender, CharacteristicUpdatedEventArgs e)
     {
+        // Обновляем время последнего получения данных для отслеживания таймаута
+        _lastDataReceivedTime = DateTime.Now;
+
         var bytes = e.Characteristic.Value;
         if (bytes != null && bytes.Length > 0)
         {
@@ -521,14 +567,9 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     //feedString += "Тревога: " + (dict["IsAlarm"] == "true" ? "Да" : "Нет") + "\n";
                     //feedString += "Чувствительность: " + dict["MTreg"] + "\n";
 
-                    if (dict["IsAlarm"] == "true")
-                    {
-                        UpdateAlarmStatus("⚠ ВНИМАНИЕ ⚠ \nТребуется очистка трубопровода", true);
-                    }
-                    else
-                    {
-                        UpdateAlarmStatus("✔ Очистка завершена ✔\nТрубопровод готов к герметизации");
-                    }
+                    if (dict["IsAlarm"] == "true") UpdateAlarmStatus(true);
+                    else UpdateAlarmStatus();
+
                     AddDataToUI(feedString);
                 }
                 else AddDataToUI(data);
@@ -537,6 +578,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
         }
     }
 
+
     private async void OnDeviceConnected(object sender, DeviceEventArgs args)
     {
         MainThread.BeginInvokeOnMainThread(() =>
@@ -544,6 +586,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             UpdateConnectionStatus("Подключен");
         });
     }
+
 
     private async void OnDeviceDisconnected(object sender, DeviceEventArgs args)
     {
@@ -571,16 +614,85 @@ private async Task<bool> EnsurePermissionsAndLocation()
         }
     }
 
-    protected override async void OnDisappearing()
+
+    // =============================================
+    // ========== ПОПЫТКА ПЕРЕПОДКЛЮЧЕНИЯ ==========
+    // =============================================
+    private async Task TryReconnect()
     {
-        base.OnDisappearing();
-        if (_connectedDevice != null && _adapter != null)
+        UpdateConnectionStatus("Потеря соединения");
+
+        // Останавливаем таймер таймаута
+        _dataTimeoutTimer?.Dispose();
+        _dataTimeoutTimer = null;
+
+        _isConnecting = false;
+        _connectedDevice = null;
+        _notifyCharacteristic = null;
+
+        while (true)
         {
-            await _adapter.DisconnectDeviceAsync(_connectedDevice);
+            // Автоматически пробуем переподключиться через 5 секунд
+            await Task.Delay(5000);
+            if (_connectedDevice != null)
+            {
+                break;
+            }
+            if (_bluetoothLE.State == BluetoothState.On)
+            {
+                UpdateConnectionStatus("Переподключение...");
+                await AutoConnectToDevice();
+            }
         }
     }
 
 
+    // ========== ОБРАБОТЧИК КНОПКИ ПЕРЕПОДКЛЮЧЕНИЯ ==========
+    private async void OnReconnectClicked(object sender, EventArgs e)
+    {
+        // Отключаем кнопку, чтобы избежать повторных нажатий
+        var button = (Button)sender;
+        button.IsEnabled = false;
+
+        try
+        {
+            await TryReconnect();
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    protected override async void OnDisappearing()
+    {
+        base.OnDisappearing();
+
+        // Останавливаем таймер
+        _dataTimeoutTimer?.Dispose();
+        _dataTimeoutTimer = null;
+
+        if (_connectedDevice != null && _adapter != null)
+        {
+            if (_notifyCharacteristic != null)
+            {
+                _notifyCharacteristic.ValueUpdated -= OnDataReceived;
+                try
+                {
+                    await _notifyCharacteristic.StopUpdatesAsync();
+                }
+                catch { /* Игнорируем */ }
+            }
+
+            try
+            {
+                await _adapter.DisconnectDeviceAsync(_connectedDevice);
+            }
+            catch { /* Игнорируем */ }
+        }
+    }
+
+    
     // ========== ИЗМЕНЕНИЕ ЦВЕТА ДАТЧИКА ==========
     public void SetLedColorWithGradient(Border led, Color baseColor)
     {
@@ -634,6 +746,10 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             // Отправляем на ESP32
             await SendBLEData(command);
+
+            // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+            SensetivityValueLabel.Text = newValue.ToString();
+            Sensetivity.Value = newValue;
         }
         catch (Exception ex)
         {
@@ -666,6 +782,10 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             // Отправляем на ESP32
             await SendBLEData(command);
+
+            // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+            ThresholdValueLabel.Text = newValue.ToString();
+            AlarmThreshold.Value = newValue;
         }
         catch (Exception ex)
         {
@@ -677,7 +797,10 @@ private async Task<bool> EnsurePermissionsAndLocation()
         }
     }
 
+
+    // ============================================
     // ========== ОТПРАВКА ДАННЫХ ПО BLE ==========
+    // ============================================
     private async Task SendBLEData(string data)
     {
         if (_writeCharacteristic == null)
@@ -695,10 +818,12 @@ private async Task<bool> EnsurePermissionsAndLocation()
         catch (Exception ex)
         {
             AddDataToUI($"❌ Ошибка BLE записи: {ex.Message}");
-            throw;
+            TryReconnect();
         }
     }
 
+
+    // ========== АНИМАЦИЯ РАМКИ ПРИЛОЖЕНИЯ ==========
     private async Task AnimateMainBorder()
     {
         double offset = 0;
@@ -706,12 +831,42 @@ private async Task<bool> EnsurePermissionsAndLocation()
         while (true)
         {
             offset += 0.01;
-            if (offset > 1.0) offset = -1.0;
+
+            // БОЛЬШЕ ЗНАЧЕНИЯ - БОЛЬШЕ ПЕРИОД АНИМАЦИИ
+            // ОТ -1 ДО 1 МИНИМУМ, ЧТОБЫ НЕ БЫЛО РЫВКОВ
+            if (offset > 1.0) offset = -1.0; 
 
             AnimatedGradient.StartPoint = new Point(offset, offset);
             AnimatedGradient.EndPoint = new Point(offset + 1, offset + 1);
 
             await Task.Delay(45);
+        }
+    }
+
+
+    // ========== ЗАПУСК МОНИТОРИНГА ТАЙМАУТА ==========
+    private void StartTimeoutMonitor()
+    {
+        _lastDataReceivedTime = DateTime.Now;
+
+        // Запускаем таймер, который проверяет каждые 5 секунд
+        _dataTimeoutTimer = new Timer(CheckTimeout, null, 5000, 5000);
+    }
+
+
+    // ========== ЗАПУСК МОНИТОРИНГА ТАЙМАУТА ==========
+    private async void CheckTimeout(object state)
+    {
+        var timeSinceLastData = (DateTime.Now - _lastDataReceivedTime).TotalSeconds;
+
+        if (timeSinceLastData > DATA_TIMEOUT_SECONDS && _connectedDevice != null)
+        {
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                UpdateConnectionStatus("Потеря соединения");
+                AddDataToUI("Попытка переподключения...");
+                await TryReconnect();
+            });
         }
     }
 }
