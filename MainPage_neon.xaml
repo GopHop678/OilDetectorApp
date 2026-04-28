@@ -1,0 +1,268 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:sh="clr-namespace:Sharpnado.Shades;assembly=Sharpnado.Maui.Shadows"
+             x:Class="OilDetectorApp.MainPage"
+             Title="Датчик нефти"
+             Shell.NavBarIsVisible="False"
+             BackgroundColor="Black"
+             SafeAreaEdges="Container">
+    
+    <!-- Цвета на уровне страницы — доступны везде -->
+    <ContentPage.Resources>
+        <Color x:Key="ColorLedOff">White</Color>
+        <Color x:Key="ColorLedBlue">#27DB9C</Color>
+        <Color x:Key="ColorLedRed">#DB3254</Color>
+        <Color x:Key="ColorMain">MediumPurple</Color>
+        <Color x:Key="ColorTextMain">White</Color>
+        <Color x:Key="ColorTextSecondary">LightGrey</Color>
+        <Color x:Key="ColorTextThird">Grey</Color>
+    </ContentPage.Resources>
+
+    <Border Background="Black"
+            Margin="20"
+            Stroke="{StaticResource ColorMain}"
+            StrokeShape="RoundRectangle 5 30 30 5"
+            StrokeThickness="3">
+        <Border.Shadow>
+            <Shadow Brush="{StaticResource ColorMain}"
+                    Radius="50"
+                    Offset="0,0"
+                    Opacity="1.0"/>
+        </Border.Shadow>
+
+        <VerticalStackLayout Padding="20" Spacing="15">
+        <!-- Статус -->
+            <Border x:Name="StatusBorder"
+                    BackgroundColor="Black"
+                StrokeThickness="0"
+                Stroke="#FFFB00"
+                StrokeShape="RoundRectangle 30"
+                StrokeDashArray="3,3"
+                StrokeDashOffset="4"
+                Padding="15"
+                HorizontalOptions="Center"
+                VerticalOptions="Center">
+
+                <Label x:Name="StatusLabel"
+                       Text="Выключен"
+                       TextColor="{StaticResource ColorTextMain}"
+                       FontSize="16"
+                       FontAttributes="Bold"
+                       HorizontalTextAlignment="Center"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center"/>
+            </Border>
+
+            <!-- Горизонтальный Grid с 4 равными колонками -->
+            <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Стили -->
+            <Grid.Resources>
+                    <!-- Стиль для текста статуса -->
+                <Style x:Key="StatusTextStyle" TargetType="Label">
+                    <Setter Property="FontSize" Value="14"/>
+                    <Setter Property="FontAttributes" Value="Bold"/>
+                    <Setter Property="HorizontalOptions" Value="Center"/>
+                    <Setter Property="Margin" Value="0,8,0,0"/>
+                        <Setter Property="TextColor" Value="{StaticResource ColorTextMain}"/>
+                </Style>
+
+                <!-- Стиль для границы лампочки -->
+                    <Style x:Key="LedStyle" TargetType="Border">
+                        <Setter Property="WidthRequest" Value="60"/>
+                        <Setter Property="HeightRequest" Value="60"/>
+                        <Setter Property="StrokeShape" Value="RoundRectangle 30"/>
+                        <Setter Property="StrokeThickness" Value="0.5"/>
+                        <Setter Property="Stroke" Value="#444444"/>
+                        <Setter Property="Shadow">
+                            <Setter.Value>
+                                <Shadow Brush="White" Radius="24" Offset="0,0" Opacity="0.0"/>
+                            </Setter.Value>
+                        </Setter>
+                        <!-- Градиент фона -->
+                        <Setter Property="Background">
+                            <Setter.Value>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#B0B0B0" Offset="0.0"/>
+                                    <GradientStop Color="#808080" Offset="0.4"/>
+                                    <GradientStop Color="#555555" Offset="0.7"/>
+                                    <GradientStop Color="#333333" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Grid.Resources>
+
+            <!-- Датчик 1 -->
+            <VerticalStackLayout Grid.Column="0" 
+                        HorizontalOptions="Center" 
+                        VerticalOptions="Center">
+
+                <Grid>
+                        <Border x:Name="Led1" 
+                            Style="{StaticResource LedStyle}"/>
+                    </Grid>
+
+                <Label x:Name="Status1" 
+               Style="{StaticResource StatusTextStyle}" 
+               Text="Датчик 1"/>
+            </VerticalStackLayout>
+
+            <!-- Датчик 2 -->
+            <VerticalStackLayout Grid.Column="1" 
+                         HorizontalOptions="Center" 
+                         VerticalOptions="Center">
+
+                <Grid>
+
+                        <Border x:Name="Led2" 
+                    Style="{StaticResource LedStyle}"/>
+
+                    </Grid>
+
+                <Label x:Name="Status2" 
+               Style="{StaticResource StatusTextStyle}" 
+               Text="Датчик 2"/>
+            </VerticalStackLayout>
+
+            <!-- Датчик 3 -->
+                <VerticalStackLayout Grid.Column="2" 
+                         HorizontalOptions="Center" 
+                         VerticalOptions="Center">
+                    <Grid>
+                        <Border x:Name="Led3" 
+                    Style="{StaticResource LedStyle}"/>
+                    </Grid>
+                    <Label x:Name="Status3" 
+               Style="{StaticResource StatusTextStyle}" 
+               Text="Датчик 3"/>
+            </VerticalStackLayout>
+
+            <!-- Датчик 4 -->
+            <VerticalStackLayout Grid.Column="3" 
+                        HorizontalOptions="Center" 
+                        VerticalOptions="Center">
+                <Grid>
+                    <Border x:Name="Led4" Style="{StaticResource LedStyle}"/>
+                </Grid>
+                <Label x:Name="Status4" 
+                    Style="{StaticResource StatusTextStyle}" 
+                    Text="Датчик 4"/>
+            </VerticalStackLayout>
+        </Grid>
+
+            <!-- Ползунки настроек -->
+            <VerticalStackLayout Spacing="5" Padding="5">
+
+                <!-- Ползунок 1 -->
+                <VerticalStackLayout>
+                    <Label Text="Порог срабатывания тревоги"
+                       Margin="10, 0"
+                       TextColor="{StaticResource ColorTextSecondary}"
+                       FontSize="16"
+                       FontAttributes="Bold"/>
+
+                    <Grid>
+                        <Label Grid.Row="0"
+                           Text="0"
+                           FontSize="14"
+                           TextColor="{StaticResource ColorTextSecondary}"
+                           HorizontalOptions="Start"/>
+                        <Label Grid.Row="1"
+                           x:Name="ThresholdValueLabel"
+                           Text="10"
+                           FontSize="12"
+                           FontAttributes="Bold"
+                           TextColor="{StaticResource ColorTextMain}"
+                           HorizontalOptions="Center"/>
+                        <Label Grid.Row="2"
+                           Text="100"
+                           FontSize="12"
+                           TextColor="{StaticResource ColorTextSecondary}"
+                           HorizontalOptions="End"/>
+                    </Grid>
+
+                    <Slider x:Name="AlarmThreshold"
+                        Minimum="0"
+                        Maximum="100"
+                        Value="10"
+                        MinimumTrackColor="{StaticResource ColorMain}"
+                        MaximumTrackColor="LightGray"
+                        ValueChanged="ThresholdValueChanged"
+                        ThumbColor="Grey"/>
+
+                </VerticalStackLayout>
+
+                <!-- Ползунок 2 -->
+                <VerticalStackLayout>
+                    <Label Text="Чувствительность датчиков"
+                       Margin="10, 0"
+                       TextColor="{StaticResource ColorTextSecondary}"
+                       FontSize="16"
+                       FontAttributes="Bold"/>
+
+                    <Grid>
+                        <Label Grid.Row="0"
+                           Text="31"
+                           FontSize="14"
+                           TextColor="{StaticResource ColorTextSecondary}"
+                           HorizontalOptions="Start"/>
+                        <Label Grid.Row="1"
+                           x:Name="SensetivityValueLabel"
+                           Text="31"
+                           FontSize="12"
+                           FontAttributes="Bold"
+                           TextColor="{StaticResource ColorTextMain}"
+                           HorizontalOptions="Center"/>
+                        <Label Grid.Row="2"
+                           Text="254"
+                           FontSize="12"
+                           TextColor="{StaticResource ColorTextSecondary}"
+                           HorizontalOptions="End"/>
+                    </Grid>
+
+                    <Slider x:Name="Sensetivity"
+                        Minimum="31"
+                        Maximum="254"
+                        Value="31"
+                        ValueChanged="SensetivityValueChanged"
+                        MinimumTrackColor="{StaticResource ColorMain}"
+                        MaximumTrackColor="LightGray"
+                        ThumbColor="Grey"/>
+
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+
+            <!-- Отображение данных датчика -->
+            <Border BackgroundColor="DimGrey" 
+                    Stroke="Grey"
+                    StrokeShape="RoundRectangle 5"
+                    StrokeThickness="3">
+                <VerticalStackLayout>
+                    <Label Text="📊 Консоль:" 
+                       Margin="7"
+                       TextColor="{StaticResource ColorTextMain}"
+                       HorizontalTextAlignment="Center"
+                       FontAttributes="Bold"/>
+
+                    <ScrollView x:Name="DataScrollView" HeightRequest="150" Margin="5">
+                        <StackLayout x:Name="DataContainer" Spacing="5">
+                            <Label x:Name="EmptyDataLabel"
+                               Text="Ожидание данных..." 
+                               TextColor="LightGray"
+                               HorizontalOptions="Center"/>
+                        </StackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+    </Border>
+</ContentPage>
