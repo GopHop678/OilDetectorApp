@@ -26,7 +26,6 @@ public partial class MainPage : ContentPage
     private ICharacteristic _notifyCharacteristic;
     private ICharacteristic _writeCharacteristic;
 
-    private bool _isScanning = false;
     private bool _isConnecting = false;
     private bool _isSendingCommand = false;
 
@@ -154,6 +153,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     public MainPage()
     {
         InitializeComponent();
+        AnimateMainBorder();
         InitializeBluetooth();
 
 #if ANDROID
@@ -180,25 +180,46 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         if (_bluetoothLE.State == BluetoothState.On)
         {
-            UpdateStatus("Bluetooth включен");
+            UpdateConnectionStatus("Bluetooth включен");
         }
         else
         {
-            UpdateStatus("Bluetooth выключен");
+            UpdateConnectionStatus("Bluetooth выключен");
         }
     }
 
-    private void UpdateStatus(string message, bool showBorder=false)
+    private void UpdateConnectionStatus(string message)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            if (StatusLabel != null)
+            if (ConnectionStatusLabel != null)
             {
-                StatusLabel.Text = message;
-                StatusLabel.TextColor = (Color)Resources["ColorTextSecondary"];
+                ConnectionStatusLabel.Text = message;
+                ConnectionStatusLabel.TextColor = (Color)Resources["ColorTextThird"];
+            }
+        });
+    }
 
-                if (showBorder) StatusBorder.StrokeThickness = 3.0f;
-                else StatusBorder.StrokeThickness = 0.0f;
+    private void UpdateAlarmStatus(string message, bool isAlarm=false)
+    {
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            if (AlarmStatusLabel != null)
+            {
+                AlarmStatusLabel.Text = message;
+                AlarmStatusLabel.TextColor = (Color)Resources["ColorTextMain"];
+
+                if (isAlarm)
+                {
+                    AlarmStatusBorder.Stroke = Colors.Yellow;
+                    AlarmStatusBorder.Background = (Color)Resources["ColorLedRed"];
+                }
+                else
+                {
+                    AlarmStatusBorder.Stroke = (Color)Resources["ColorTextThird"];
+                    //AlarmStatusBorder.Background = (Color)Resources["ColorLedBlue"];
+                    AlarmStatusBorder.Background = Colors.White;
+                }
             }
         });
     }
@@ -209,7 +230,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            UpdateStatus("Поиск устройства...");
+            UpdateConnectionStatus("Поиск устройства...");
             AddDataToUI("❗ Убедитесь, что устройство включено. Продолжаем поиск...🔎");
         });
     }
@@ -262,7 +283,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     private async Task AutoConnectToDevice()
     {
         // Ждем включения Bluetooth
-        UpdateStatus("Ожидание Bluetooth...");
+        UpdateConnectionStatus("Ожидание Bluetooth...");
         while (true)
         {
             if (_bluetoothLE.State != BluetoothState.On)
@@ -279,11 +300,11 @@ private async Task<bool> EnsurePermissionsAndLocation()
         //if (!permissionsOk)
         //{
         //    AddDataToUI("❌ Недостаточно прав для BLE сканирования");
-        //    UpdateStatus("Ошибка прав");
+        //    UpdateConnectionStatus("Ошибка прав");
         //    return;
         //}
 
-        UpdateStatus("Поиск устройства...");
+        UpdateConnectionStatus("Поиск устройства...");
 
 
         // Создаем фильтр для сканирования по Service UUID
@@ -353,7 +374,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
         try
         {
-            UpdateStatus($"Подключение...");
+            UpdateConnectionStatus($"Подключение...");
 
             // Подключаемся
             await _adapter.ConnectToDeviceAsync(device);
@@ -414,7 +435,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
         }
         catch (Exception ex)
         {
-            UpdateStatus("Ошибка подключения");
+            UpdateConnectionStatus("Ошибка подключения");
             AddDataToUI($"❌ Ошибка: {ex.Message}");
 
             if (_notifyCharacteristic != null)
@@ -502,11 +523,11 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                     if (dict["IsAlarm"] == "true")
                     {
-                        UpdateStatus("⚠ ВНИМАНИЕ ⚠ \nТребуется очистка трубопровода", true);
+                        UpdateAlarmStatus("⚠ ВНИМАНИЕ ⚠ \nТребуется очистка трубопровода", true);
                     }
                     else
                     {
-                        UpdateStatus("✔ Очистка завершена ✔\nТрубопровод готов к герметизации");
+                        UpdateAlarmStatus("✔ Очистка завершена ✔\nТрубопровод готов к герметизации");
                     }
                     AddDataToUI(feedString);
                 }
@@ -520,7 +541,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            UpdateStatus("Подключен");
+            UpdateConnectionStatus("Подключен");
         });
     }
 
@@ -528,7 +549,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            UpdateStatus("Потеря соединения");
+            UpdateConnectionStatus("Потеря соединения");
         });
 
         _connectedDevice = null;
@@ -675,6 +696,22 @@ private async Task<bool> EnsurePermissionsAndLocation()
         {
             AddDataToUI($"❌ Ошибка BLE записи: {ex.Message}");
             throw;
+        }
+    }
+
+    private async Task AnimateMainBorder()
+    {
+        double offset = 0;
+
+        while (true)
+        {
+            offset += 0.01;
+            if (offset > 1.0) offset = -1.0;
+
+            AnimatedGradient.StartPoint = new Point(offset, offset);
+            AnimatedGradient.EndPoint = new Point(offset + 1, offset + 1);
+
+            await Task.Delay(45);
         }
     }
 }

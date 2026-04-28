@@ -28,7 +28,7 @@
 		<MauiXamlInflator>SourceGen</MauiXamlInflator>
 
 		<!-- Display name -->
-		<ApplicationTitle>Датчик нефти</ApplicationTitle>
+		<ApplicationTitle>Детектор нефтяной пленки</ApplicationTitle>
 
 		<!-- App Identifier -->
 		<ApplicationId>com.companyname.oildetectorapp</ApplicationId>
