@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 400 400">
+  <!-- Вручную увеличенные координаты (без transform) -->
+  <rect x="0" y="0" width="800" height="800" fill="#512BD4" />
+  <circle cx="100" cy="35" r="100" fill="white" />
+</svg>

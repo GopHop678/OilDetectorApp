@@ -4,7 +4,6 @@ using Plugin.BLE.Abstractions.EventArgs;
 using System.Text;
 using Plugin.BLE.Abstractions;
 
-
 #if ANDROID
 using Android;
 using AndroidX.Core.Content;
@@ -293,7 +292,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             DataContainer.Children.Add(dataLabel);
 
             // ✅ Ограничиваем количество элементов
-            while (DataContainer.Children.Count > 20)
+            while (DataContainer.Children.Count > 30)
             {
                 // Удаляем самый старый элемент (первый в списке)
                 DataContainer.Children.RemoveAt(0);
@@ -423,6 +422,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             catch (Exception ex)
             {
                 AddDataToUI($"⚠️ Не удалось установить MTU: {ex.Message}");
+                await TryReconnect();
             }
 
             // Небольшая задержка для стабилизации
@@ -437,6 +437,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             if (targetService == null)
             {
                 AddDataToUI($"❌ Сервис {SERVICE_UUID} не найден!");
+                await TryReconnect();
                 return;
             }
 
@@ -449,6 +450,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             if (txCharacteristic == null)
             {
                 AddDataToUI("❌ TX характеристика не найдена!");
+                await TryReconnect();
                 return;
             }
 
@@ -458,6 +460,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             if (rxCharacteristic == null)
             {
                 AddDataToUI("❌ RX характеристика не найдена!");
+                await TryReconnect();
                 return;
             }
 
@@ -507,6 +510,9 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             if (!string.IsNullOrWhiteSpace(data))
             {
+                List<string> ledsToReset = [
+                        "Led1", "Led2", "Led3", "Led4", "Led5", "Led6",
+                    ];
                 if (data.Contains("Led"))
                 {
                     string[] refinedData = data.Split("|");
@@ -515,7 +521,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     foreach (string pair in refinedData)
                     {
                         string[] pairValues = pair.Split(':');
-                        dict[pairValues[0]] = pairValues[1];
+                        if (pairValues.Length > 1) dict[pairValues[0]] = pairValues[1];
                     }
 
                     string threshold = dict["Threshold"].Replace(".", ",");
@@ -528,34 +534,26 @@ private async Task<bool> EnsurePermissionsAndLocation()
                         {
                             feedString += key.Replace("Led", "Датчик ") + ": " + dict[key].PadRight(10) + " ";
                             string lightLevel = dict[key].Replace(".", ",");
-                            switch (key) {
+                            ledsToReset.Remove(key);
+                            switch (key)
+                            {
                                 case "Led1":
-                                    if (float.Parse(lightLevel) < float.Parse(threshold))
-                                    {
-                                        SetLedColorWithGradient(Led1, (Color)Resources["ColorLedBlue"]);
-                                    }
-                                    else SetLedColorWithGradient(Led1, (Color)Resources["ColorLedRed"]);
+                                    SwitchLed(Led1, lightLevel, threshold);
                                     break;
                                 case "Led2":
-                                    if (float.Parse(lightLevel) < float.Parse(threshold))
-                                    {
-                                        SetLedColorWithGradient(Led2, (Color)Resources["ColorLedBlue"]);
-                                    }
-                                    else SetLedColorWithGradient(Led2, (Color)Resources["ColorLedRed"]);
+                                    SwitchLed(Led2, lightLevel, threshold);
                                     break;
                                 case "Led3":
-                                    if (float.Parse(lightLevel) < float.Parse(threshold))
-                                    {
-                                        SetLedColorWithGradient(Led3, (Color)Resources["ColorLedBlue"]);
-                                    }
-                                    else SetLedColorWithGradient(Led3, (Color)Resources["ColorLedRed"]);
+                                    SwitchLed(Led3, lightLevel, threshold);
                                     break;
                                 case "Led4":
-                                    if (float.Parse(lightLevel) < float.Parse(threshold))
-                                    {
-                                        SetLedColorWithGradient(Led4, (Color)Resources["ColorLedBlue"]);
-                                    }
-                                    else SetLedColorWithGradient(Led4, (Color)Resources["ColorLedRed"]);
+                                    SwitchLed(Led4, lightLevel, threshold);
+                                    break;
+                                case "Led5":
+                                    SwitchLed(Led5, lightLevel, threshold);
+                                    break;
+                                case "Led6":
+                                    SwitchLed(Led6, lightLevel, threshold);
                                     break;
                                 default:
                                     break;
@@ -572,8 +570,12 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                     AddDataToUI(feedString);
                 }
-                else AddDataToUI(data);
+                else AddDataToUI(data.Replace("|", "   "));
 
+                foreach (string led in ledsToReset)
+                {
+                    ResetLed(led);
+                }
             }
         }
     }
@@ -806,6 +808,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
         if (_writeCharacteristic == null)
         {
             AddDataToUI("❌ BLE характеристика не инициализирована");
+            await TryReconnect();
             return;
         }
 
@@ -868,5 +871,79 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 await TryReconnect();
             });
         }
+    }
+
+
+    // ========== СМЕНА ЦВЕТА ДАТЧИКОВ ==========
+    private void SwitchLed(Border led, string lightlevel, string threshold)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (float.Parse(lightlevel) < float.Parse(threshold))
+            {
+                SetLedColorWithGradient(led, (Color)Resources["ColorLedBlue"]);
+            }
+            else SetLedColorWithGradient(led, (Color)Resources["ColorLedRed"]);
+        });
+    }
+
+
+    // ========== CБРОС ЦВЕТА ДАТЧИКОВ ==========
+    private void ResetLed(string led)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            var defaultGradient = new LinearGradientBrush();
+
+            defaultGradient.StartPoint = new Point(0, 0);
+            defaultGradient.EndPoint = new Point(1, 1);
+
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#B0B0B0"), 0.0f));
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#808080"), 0.4f));
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#555555"), 0.7f));
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#333333"), 1.0f));
+
+
+
+            switch (led)
+            {
+                case "Led1":
+                    Led1.Background = defaultGradient;
+                    Led1.Shadow = null;
+                    break;
+                case "Led2":
+                    Led2.Background = defaultGradient;
+                    Led2.Shadow = null;
+                    break;
+                case "Led3":
+                    Led3.Background = defaultGradient;
+                    Led3.Shadow = null;
+                    break;
+                case "Led4":
+                    Led4.Background = defaultGradient;
+                    Led4.Shadow = null;
+                    break;
+                case "Led5":
+                    Led5.Background = defaultGradient;
+                    Led5.Shadow = null;
+                    break;
+                case "Led6":
+                    Led6.Background = defaultGradient;
+                    Led6.Shadow = null;
+                    break;
+                default:
+                    break;
+            }
+        });
+    }
+
+
+    // ========== ВОЗВРАТ ИНТЕРФЕЙСА К ИСХОДНОМУ ПОЛОЖЕНИЮ ==========
+    private void ResetGui()
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+
+        });
     }
 }

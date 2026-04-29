@@ -16,7 +16,7 @@
      GPIO18 - зелёный LED
      GPIO19 - красный LED
      
-   I2C шина 0: SDA=33, SCL=32 (датчики 1 и 2)
+   I2C шина 0: SDA=32, SCL=33 (датчики 1 и 2)
    I2C шина 1: SDA=26, SCL=27 (датчики 3 и 4)
    
    Адреса датчиков:
@@ -45,13 +45,16 @@ const int ALARM_PIN = 5;
 const int POWER_LED_PIN = 18;
 const int ALARM_LED_PIN = 19;
 
+// ========== ТАЙМУАТ ДАТЧИКОВ ==========
+const unsigned long HEALTH_CHECK_INTERVAL = 5000; // 5000 ms by default
+
 // ========== I2C КОНФИГУРАЦИЯ ==========
 // Шина 0 (датчики 1 и 2)
-const int I2C0_SDA = 33; //white
-const int I2C0_SCL = 32; // green
+const int I2C0_SDA = 32; // white
+const int I2C0_SCL = 33; // green
 // Шина 1 (датчики 3 и 4)
 const int I2C1_SDA = 26; // white
-const int I2C1_SCL = 27; //green
+const int I2C1_SCL = 27; // green
 
 // Адреса BH1750
 const uint8_t BH1750_ADDR_LOW = 0x23;   // ADDR на GND
@@ -92,6 +95,7 @@ private:
     BH1750 sensor;
     
     float currentValue;
+    bool isAlive;
     bool alarmTriggered;
     int alarmConfirmCounter;
     float lastValueOn;
@@ -102,6 +106,7 @@ public:
     OilDetector(const char* detectorName, uint8_t i2cAddr, TwoWire& bus) 
         : name(detectorName), address(i2cAddr), i2cBus(&bus) {
         currentValue = 0;
+        isAlive = true;
         alarmTriggered = false;
         alarmConfirmCounter = 0;
         lastValueOn = 0;
@@ -115,6 +120,11 @@ public:
     
     void setGlobalSensitivity(uint8_t mtreg) {
         sensor.setMTreg(mtreg);
+    }
+
+    bool checkConnection() {
+        i2cBus->beginTransmission(address);
+        return (i2cBus->endTransmission() == 0);
     }
     
     float measure(int uvLedPin, int exposureTime) {
@@ -194,6 +204,8 @@ public:
     float getValueOn() { return lastValueOn; }
     float getValueOff() { return lastValueOff; }
     int getAlarmCounter() { return alarmConfirmCounter; }
+    bool isSensorAlive() { return isAlive; }
+    void setSensorAlive(bool alive) { isAlive = alive; }
 };
 
 // ========== КЛАСС УПРАВЛЕНИЯ ДАТЧИКАМИ ==========
@@ -203,14 +215,23 @@ private:
     int sensorCount;
     TwoWire i2cBus0;
     TwoWire i2cBus1;
+    unsigned long lastHealthCheck = 0;
     
 public:
     OilDetectorManager() : sensorCount(0), i2cBus0(0), i2cBus1(1) {}
     
     void begin() {
+
+        // Сброс шин I2C
+        i2cBus0.end();
+        i2cBus1.end();
+        delay(50);
+
         // Инициализация шин I2C
         i2cBus0.begin(I2C0_SDA, I2C0_SCL, 100000);
         i2cBus1.begin(I2C1_SDA, I2C1_SCL, 100000);
+
+ 
         
         // Создание датчиков
         // Шина 0: датчики 1 и 2
@@ -219,6 +240,9 @@ public:
         // Шина 1: датчики 3 и 4
         addSensor("Led3", BH1750_ADDR_LOW, i2cBus1);   // ADDR на GND
         addSensor("Led4", BH1750_ADDR_HIGH, i2cBus1);  // ADDR на VCC
+        // // Шина 2: датчики 5 и 6
+        // addSensor("Led5", BH1750_ADDR_LOW, i2cBus2);   // ADDR на GND
+        // addSensor("Led6", BH1750_ADDR_HIGH, i2cBus2);  // ADDR на VCC
         
         addLogEntry("Инициализировано " + String(sensorCount) + " датчиков");
     }
@@ -240,8 +264,29 @@ public:
             sensors[i]->setGlobalSensitivity(mtreg);
         }
     }
+
+    void checkAllSensorsHealth() {
+        for (int i = 0; i < sensorCount; i++) {
+            // Проверка наличия датчика на шине
+            bool present = sensors[i]->checkConnection();
+
+            if (present) {
+                // Если датчик ответил
+                sensors[i]->setSensorAlive(true);
+            } else {
+                // Если датчик не ответил
+                sensors[i]->setSensorAlive(false);
+            }
+        }
+    }
     
     void measureAll(int uvLedPin, int exposureTime) {
+        // Проверяем наличие датчиков периодически
+        if (millis() - lastHealthCheck > HEALTH_CHECK_INTERVAL) {
+            lastHealthCheck = millis();
+            checkAllSensorsHealth();
+        }
+
         for (int i = 0; i < sensorCount; i++) {
             sensors[i]->measure(uvLedPin, exposureTime);
         }
@@ -303,7 +348,7 @@ public:
         
         if (simulationMode) {
             // Симулируем показания всех датчиков
-            for (int i = 1; i <= 4; i++) {
+            for (int i = 1; i <= MAX_SENSORS; i++) {
                 if (i > 1) msg += "|";
                 msg += "Led" + String(i) + ":" + String((float)random(SIM_MIN_VALUE, SIM_MAX_VALUE) / 10, 1);
             }
@@ -311,8 +356,10 @@ public:
         else {
             // Собираем показания всех датчиков
             for (int i = 0; i < sensorCount; i++) {
-                if (i > 0) msg += "|";
-                msg += sensors[i]->getName() + ":" + String(sensors[i]->getValue(), 1);
+                if (sensors[i]->isSensorAlive()){
+                    if (i > 0) msg += "|";
+                    msg += sensors[i]->getName() + ":" + String(sensors[i]->getValue(), 1);
+                }
             }
         }
         
@@ -320,7 +367,6 @@ public:
         msg += "|Threshold:" + String(globalThreshold);
         msg += "|IsAlarm:" + String(isAnyAlarm() ? "true" : "false");
         msg += "|MTreg:" + String(bh1750_mtreg);
-        msg += "|Exposure:" + String(uvExposureTime) + "ms";
         
         return msg;
     }
@@ -576,6 +622,10 @@ void setup() {
     addLogEntry("Первое измерение: " + detectorManager.getAllStatus());
     
     // BLE инициализация
+    // Ставим все BLE-настройки ESP32 на "заводские"
+    // ВНИМАНИЕ: Это удалит все данные о сопряженных устройствах!
+    // BLEDevice::deinit(true); // true означает полную очистку NVS
+    // delay(100);
     BLEDevice::init("ESP32_Oil_Detector_4Z");
     BLEServer *pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());

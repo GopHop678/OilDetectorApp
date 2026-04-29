@@ -33,13 +33,13 @@
             </LinearGradientBrush>
         </Border.Stroke>
 
-        <Grid Padding="20" RowDefinitions="Auto, Auto, Auto, Auto, *" RowSpacing="20">
+        <Grid RowDefinitions="Auto, Auto, Auto, Auto, *" RowSpacing="10">
         <!-- Статус -->
             <Border Grid.Row="0"
                 x:Name="ConnectionStatusBorder"
                 BackgroundColor="White"
-                Padding="15"
                 StrokeThickness="0"
+                    Margin="5"
                 HorizontalOptions="Center"
                 VerticalOptions="Center">
 
@@ -53,27 +53,25 @@
                        VerticalOptions="Center"/>
             </Border>
 
-            <!-- Горизонтальный Grid с 4 равными колонками -->
-            <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+            <!-- Грид для 2 рядов по 3 датчика -->
+            <Grid Grid.Row="1"
+                  RowDefinitions="Auto, Auto"
+                  ColumnDefinitions="*, *, *"
+                  RowSpacing="15"
+                  ColumnSpacing="10">
 
-            <!-- Стили -->
-            <Grid.Resources>
+                <!-- Стили -->
+                <Grid.Resources>
                     <!-- Стиль для текста статуса -->
-                <Style x:Key="StatusTextStyle" TargetType="Label">
-                    <Setter Property="FontSize" Value="14"/>
-                    <Setter Property="FontAttributes" Value="Bold"/>
-                    <Setter Property="HorizontalOptions" Value="Center"/>
-                    <Setter Property="Margin" Value="0,8,0,0"/>
+                    <Style x:Key="StatusTextStyle" TargetType="Label">
+                        <Setter Property="FontSize" Value="14"/>
+                        <Setter Property="FontAttributes" Value="Bold"/>
+                        <Setter Property="HorizontalOptions" Value="Center"/>
+                        <Setter Property="Margin" Value="0,8,0,0"/>
                         <Setter Property="TextColor" Value="{StaticResource ColorTextMain}"/>
-                </Style>
+                    </Style>
 
-                <!-- Стиль для границы лампочки -->
+                    <!-- Стиль для границы лампочки -->
                     <Style x:Key="LedStyle" TargetType="Border">
                         <Setter Property="WidthRequest" Value="60"/>
                         <Setter Property="HeightRequest" Value="60"/>
@@ -99,63 +97,71 @@
                     </Style>
                 </Grid.Resources>
 
-            <!-- Датчик 1 -->
-            <VerticalStackLayout Grid.Column="0" 
-                        HorizontalOptions="Center" 
-                        VerticalOptions="Center">
+                <!-- ========== РЯД 1 (Датчики 1-3) ========== -->
 
-                <Grid>
-                        <Border x:Name="Led1" 
-                            Style="{StaticResource LedStyle}"/>
-                    </Grid>
-
-                <Label x:Name="Status1" 
+                <!-- Датчик 1 -->
+                <VerticalStackLayout Grid.Row="0" Grid.Column="0"
+                         HorizontalOptions="Center" 
+                         VerticalOptions="Center">
+                    <Border x:Name="Led1" Style="{StaticResource LedStyle}"/>
+                    <Label x:Name="Status1" 
                Style="{StaticResource StatusTextStyle}" 
                Text="Датчик 1"/>
-            </VerticalStackLayout>
+                </VerticalStackLayout>
 
-            <!-- Датчик 2 -->
-            <VerticalStackLayout Grid.Column="1" 
+                <!-- Датчик 2 -->
+                <VerticalStackLayout Grid.Row="0" Grid.Column="1"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-
-                <Grid>
-
-                        <Border x:Name="Led2" 
-                    Style="{StaticResource LedStyle}"/>
-
-                    </Grid>
-
-                <Label x:Name="Status2" 
+                    <Border x:Name="Led2" Style="{StaticResource LedStyle}"/>
+                    <Label x:Name="Status2" 
                Style="{StaticResource StatusTextStyle}" 
                Text="Датчик 2"/>
-            </VerticalStackLayout>
+                </VerticalStackLayout>
 
-            <!-- Датчик 3 -->
-                <VerticalStackLayout Grid.Column="2" 
+                <!-- Датчик 3 -->
+                <VerticalStackLayout Grid.Row="0" Grid.Column="2"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Grid>
-                        <Border x:Name="Led3" 
-                    Style="{StaticResource LedStyle}"/>
-                    </Grid>
+                    <Border x:Name="Led3" Style="{StaticResource LedStyle}"/>
                     <Label x:Name="Status3" 
                Style="{StaticResource StatusTextStyle}" 
                Text="Датчик 3"/>
-            </VerticalStackLayout>
+                </VerticalStackLayout>
 
-            <!-- Датчик 4 -->
-            <VerticalStackLayout Grid.Column="3" 
-                        HorizontalOptions="Center" 
-                        VerticalOptions="Center">
-                <Grid>
+                <!-- ========== РЯД 2 (Датчики 4-6) ========== -->
+
+                <!-- Датчик 4 -->
+                <VerticalStackLayout Grid.Row="1" Grid.Column="0"
+                         HorizontalOptions="Center" 
+                         VerticalOptions="Center">
                     <Border x:Name="Led4" Style="{StaticResource LedStyle}"/>
-                </Grid>
-                <Label x:Name="Status4" 
-                    Style="{StaticResource StatusTextStyle}" 
-                    Text="Датчик 4"/>
-            </VerticalStackLayout>
-        </Grid>
+                    <Label x:Name="Status4" 
+               Style="{StaticResource StatusTextStyle}" 
+               Text="Датчик 4"/>
+                </VerticalStackLayout>
+
+                <!-- Датчик 5 -->
+                <VerticalStackLayout Grid.Row="1" Grid.Column="1"
+                         HorizontalOptions="Center" 
+                         VerticalOptions="Center">
+                    <Border x:Name="Led5" Style="{StaticResource LedStyle}"/>
+                    <Label x:Name="Status5" 
+               Style="{StaticResource StatusTextStyle}" 
+               Text="Датчик 5"/>
+                </VerticalStackLayout>
+
+                <!-- Датчик 6 -->
+                <VerticalStackLayout Grid.Row="1" Grid.Column="2"
+                         HorizontalOptions="Center" 
+                         VerticalOptions="Center">
+                    <Border x:Name="Led6" Style="{StaticResource LedStyle}"/>
+                    <Label x:Name="Status6" 
+               Style="{StaticResource StatusTextStyle}" 
+               Text="Датчик 6"/>
+                </VerticalStackLayout>
+
+            </Grid>
 
             <Border Grid.Row="2"
                     x:Name="AlarmStatusBorder"
@@ -181,12 +187,11 @@
             </Border>
 
             <!-- Ползунки настроек -->
-            <VerticalStackLayout Grid.Row="3" Spacing="5" Padding="5">
+            <VerticalStackLayout Grid.Row="3" Spacing="5" Margin="20, 0">
 
                 <!-- Ползунок 1 -->
                 <VerticalStackLayout>
                     <Label Text="Порог срабатывания тревоги"
-                       Margin="10, 0"
                        TextColor="{StaticResource ColorTextMain}"
                        FontSize="16"
                        FontAttributes="Bold"/>
@@ -225,7 +230,6 @@
                 <!-- Ползунок 2 -->
                 <VerticalStackLayout>
                     <Label Text="Чувствительность датчиков"
-                       Margin="10, 0"
                        TextColor="{StaticResource ColorTextMain}"
                        FontSize="16"
                        FontAttributes="Bold"/>
@@ -265,6 +269,7 @@
 
             <!-- Отображение данных датчика -->
             <Border Grid.Row="4"
+                    Margin="20,0,20,20"
                     BackgroundColor="DimGrey" 
                     Stroke="Grey"
                     StrokeShape="RoundRectangle 5"
