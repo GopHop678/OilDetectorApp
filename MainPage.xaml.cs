@@ -159,6 +159,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         InitializeComponent();
         AnimateMainBorder();
+        AnimateAlarmBorder();
         InitializeBluetooth();
 
 #if ANDROID
@@ -230,9 +231,16 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                 if (isAlarm)
                 {
+                    var themeColor = (Color)Resources["ColorLedRed"];
                     AlarmStatusLabel.Text = "⚠ ВНИМАНИЕ ⚠ \nТребуется очистка трубопровода"; 
                     AlarmStatusBorder.Stroke = Colors.Yellow;
-                    AlarmStatusBorder.Background = (Color)Resources["ColorLedRed"];
+                    AlarmStatusBorder.Background = themeColor;
+
+                    AlarmThreshold.MinimumTrackColor = themeColor;
+                    AlarmThreshold.ThumbColor = themeColor;
+
+                    Sensetivity.MinimumTrackColor = themeColor;
+                    Sensetivity.ThumbColor = themeColor;
 
                     // Красная рамка при тревоге
                     animatedGradient.GradientStops[0].Color = Colors.IndianRed;
@@ -240,14 +248,20 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 }
                 else
                 {
+                    var themeColor = Colors.DarkBlue;
                     AlarmStatusLabel.Text = "✔ Очистка завершена ✔\nТрубопровод готов к герметизации"; 
                     AlarmStatusBorder.Stroke = (Color)Resources["ColorTextThird"];
-                    //AlarmStatusBorder.Background = (Color)Resources["ColorLedBlue"];
                     AlarmStatusBorder.Background = Colors.White;
 
+                    AlarmThreshold.MinimumTrackColor = themeColor;
+                    AlarmThreshold.ThumbColor = themeColor;
+
+                    Sensetivity.MinimumTrackColor = themeColor;
+                    Sensetivity.ThumbColor = themeColor;
+
                     // Обычная рамка при отсутствии тревоги
-                    animatedGradient.GradientStops[0].Color = Colors.DarkBlue;
-                    animatedGradient.GradientStops[3].Color = Colors.DarkBlue;
+                    animatedGradient.GradientStops[0].Color = themeColor;
+                    animatedGradient.GradientStops[3].Color = themeColor;
                 }
             }
         });
@@ -475,6 +489,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             // ✅ ЗАПУСКАЕМ МОНИТОРИНГ ТАЙМАУТА
             StartTimeoutMonitor();
+            ResetGui();
         }
         catch (Exception ex)
         {
@@ -632,10 +647,10 @@ private async Task<bool> EnsurePermissionsAndLocation()
         _connectedDevice = null;
         _notifyCharacteristic = null;
 
+        ResetGui();
+
         while (true)
         {
-            // Автоматически пробуем переподключиться через 5 секунд
-            await Task.Delay(5000);
             if (_connectedDevice != null)
             {
                 break;
@@ -645,6 +660,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 UpdateConnectionStatus("Переподключение...");
                 await AutoConnectToDevice();
             }
+            // Автоматически пробуем переподключиться через 5 секунд
+            await Task.Delay(5000);
         }
     }
 
@@ -698,32 +715,39 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ИЗМЕНЕНИЕ ЦВЕТА ДАТЧИКА ==========
     public void SetLedColorWithGradient(Border led, Color baseColor)
     {
-        // ✅ Принудительно выполняем в UI потоке
-        MainThread.BeginInvokeOnMainThread(() =>
+        MainThread.BeginInvokeOnMainThread(async () =>
         {
-            // Создаем градиент на основе базового цвета
+            int timeToDelay = GetRandomDelay();
+            await Task.Delay(timeToDelay);
+
+            // Создаем градиент
             var gradient = new LinearGradientBrush
             {
                 StartPoint = new Point(0, 0),
                 EndPoint = new Point(1, 1)
             };
 
-            // Цвета градиента: светлый вверху-слева, темный внизу-справа
-            gradient.GradientStops.Add(new GradientStop(baseColor, 0.0f)); // исходный цвет
+            gradient.GradientStops.Add(new GradientStop(baseColor, 0.0f));
             gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.8f), 0.3f));
             gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.6f), 0.6f));
-            gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.4f), 1.0f)); // самый темный
+            gradient.GradientStops.Add(new GradientStop(baseColor.MultiplyAlpha(0.4f), 1.0f));
 
             led.Background = gradient;
 
-            // Создаем новую тень с цветом свечения
-            led.Shadow = new Shadow
+            // Анимация тени (пульсация)
+            var shadowAnimation = new Animation();
+            shadowAnimation.Add(0, 1, new Animation(v =>
             {
-                Brush = baseColor,
-                Radius = 16,
-                Offset = new Point(0, 0),
-                Opacity = 1.0f
-            };
+                led.Shadow = new Shadow
+                {
+                    Brush = baseColor,
+                    Radius = (float)(8 + v * 16),
+                    Offset = new Point(0, 0),
+                    Opacity = 1f
+                };
+            }, 0, 1, Easing.CubicInOut));
+
+            shadowAnimation.Commit(led, "ShadowPulse", length: 300, repeat: () => false);
         });
     }
 
@@ -764,39 +788,45 @@ private async Task<bool> EnsurePermissionsAndLocation()
     }
 
 
-    // ========== ОБРАБОТЧИК ПОЛЗУНКА ЧУВСТВИТЕЛЬНОСТИ ==========
+    // ========== ОБРАБОТЧИК ПОЛЗУНКА ПОРОГА ==========
     private async void ThresholdValueChanged(object sender, ValueChangedEventArgs e)
     {
-        var slider = (Slider)sender;
-        int newValue = (int)Math.Round(e.NewValue);
-
-        // Обновляем отображаемое значение (если есть Label)
-        ThresholdValueLabel.Text = newValue.ToString();
-
-        // Блокируем повторные вызовы во время отправки
-        if (_isSendingCommand) return;
-        _isSendingCommand = true;
-
-        try
+        MainThread.BeginInvokeOnMainThread(async () =>
         {
-            // Формируем команду: S + значение
-            string command = $"S{newValue}";
+            AddDataToUI("Отправвка,,,");
 
-            // Отправляем на ESP32
-            await SendBLEData(command);
 
-            // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+            var slider = (Slider)sender;
+            int newValue = (int)Math.Round(e.NewValue);
+
+            // Обновляем отображаемое значение (если есть Label)
             ThresholdValueLabel.Text = newValue.ToString();
-            AlarmThreshold.Value = newValue;
-        }
-        catch (Exception ex)
-        {
-            AddDataToUI($"❌ Ошибка отправки: {ex.Message}");
-        }
-        finally
-        {
-            _isSendingCommand = false;
-        }
+
+            // Блокируем повторные вызовы во время отправки
+            if (_isSendingCommand) return;
+            _isSendingCommand = true;
+
+            try
+            {
+                // Формируем команду: S + значение
+                string command = $"S{newValue}";
+
+                // Отправляем на ESP32
+                await SendBLEData(command);
+
+                // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+                ThresholdValueLabel.Text = newValue.ToString();
+                AlarmThreshold.Value = newValue;
+            }
+            catch (Exception ex)
+            {
+                AddDataToUI($"❌ Ошибка отправки: {ex.Message}");
+            }
+            finally
+            {
+                _isSendingCommand = false;
+            }
+        });
     }
 
 
@@ -847,17 +877,33 @@ private async Task<bool> EnsurePermissionsAndLocation()
     }
 
 
+    // ========== АНИМАЦИЯ РАМКИ СТАТУСА ТРЕВОГИ ==========
+    private async Task AnimateAlarmBorder()
+    {
+        double strokeOffset = 0;
+
+        while (true)
+        {
+            if (strokeOffset == 10.0) strokeOffset = 0.0;
+            strokeOffset += 0.1;
+            AlarmStatusBorder.StrokeDashOffset = strokeOffset;
+
+            await Task.Delay(45);
+        }
+    }
+
+
     // ========== ЗАПУСК МОНИТОРИНГА ТАЙМАУТА ==========
     private void StartTimeoutMonitor()
     {
         _lastDataReceivedTime = DateTime.Now;
 
         // Запускаем таймер, который проверяет каждые 5 секунд
-        _dataTimeoutTimer = new Timer(CheckTimeout, null, 5000, 5000);
+        _dataTimeoutTimer = new Timer(CheckTimeout, null, 100, 5000);
     }
 
 
-    // ========== ЗАПУСК МОНИТОРИНГА ТАЙМАУТА ==========
+    // ========== ПРОВЕРКА ТАЙМАУТА ==========
     private async void CheckTimeout(object state)
     {
         var timeSinceLastData = (DateTime.Now - _lastDataReceivedTime).TotalSeconds;
@@ -867,7 +913,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             MainThread.BeginInvokeOnMainThread(async () =>
             {
                 UpdateConnectionStatus("Потеря соединения");
-                AddDataToUI("Попытка переподключения...");
+                AddDataToUI("🔄 Попытка автоматического переподключения...");
                 await TryReconnect();
             });
         }
@@ -893,6 +939,9 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
+            int timeToDelay = GetRandomDelay();
+            await Task.Delay(timeToDelay);
+
             var defaultGradient = new LinearGradientBrush();
 
             defaultGradient.StartPoint = new Point(0, 0);
@@ -902,8 +951,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
             defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#808080"), 0.4f));
             defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#555555"), 0.7f));
             defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#333333"), 1.0f));
-
-
 
             switch (led)
             {
@@ -938,12 +985,84 @@ private async Task<bool> EnsurePermissionsAndLocation()
     }
 
 
+    // ========== CБРОС ЦВЕТА ДАТЧИКОВ ==========
+    private void ResetAllLeds()
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            var defaultGradient = new LinearGradientBrush();
+
+            defaultGradient.StartPoint = new Point(0, 0);
+            defaultGradient.EndPoint = new Point(1, 1);
+
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#B0B0B0"), 0.0f));
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#808080"), 0.4f));
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#555555"), 0.7f));
+            defaultGradient.GradientStops.Add(new GradientStop(Color.FromArgb("#333333"), 1.0f));
+
+            List<Border> ledsToReset = [
+                Led1, Led2, Led3, Led4, Led5, Led6
+            ];
+
+            foreach (Border led in ledsToReset)
+            {
+                led.Background = defaultGradient;
+                led.Shadow = null;
+            }
+
+            //ResetLed("Led1");
+            //ResetLed("Led2");
+            //ResetLed("Led3");
+            //ResetLed("Led4");
+            //ResetLed("Led5");
+            //ResetLed("Led6");
+        });
+    }
+
+
     // ========== ВОЗВРАТ ИНТЕРФЕЙСА К ИСХОДНОМУ ПОЛОЖЕНИЮ ==========
     private void ResetGui()
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
+            ResetAllLeds();
 
+            AlarmStatusBorder.Stroke = Colors.White;
+            AlarmStatusBorder.Background = Colors.White;
+            AlarmStatusLabel.Text = " \n ";
+
+            // ✅ Временно отключаем обработчики событий
+            AlarmThreshold.ValueChanged -= ThresholdValueChanged;
+            Sensetivity.ValueChanged -= SensetivityValueChanged;
+
+            // Устанавливаем значения
+            AlarmThreshold.Value = 10;
+            ThresholdValueLabel.Text = "10";
+            Sensetivity.Value = 31;
+            SensetivityValueLabel.Text = "31";
+
+            // ✅ Возвращаем обработчики обратно
+            AlarmThreshold.ValueChanged += ThresholdValueChanged;
+            Sensetivity.ValueChanged += SensetivityValueChanged;
+
+            AnimatedGradient.GradientStops[0].Color = Colors.DarkBlue;
+            AnimatedGradient.GradientStops[3].Color = Colors.DarkBlue;
+
+            AlarmThreshold.MinimumTrackColor = Colors.DarkBlue;
+            AlarmThreshold.ThumbColor = Colors.DarkBlue;
+
+            Sensetivity.MinimumTrackColor = Colors.DarkBlue;
+            Sensetivity.ThumbColor = Colors.DarkBlue;
         });
+    }
+
+
+    // ========== ПОЛУЧЕНИЕ РАНДОМНОЙ ЗАДЕРЖКИ ==========
+    private int GetRandomDelay()
+    {
+        Random random = new Random();
+        int delay = random.Next(0, 500);
+
+        return delay;
     }
 }

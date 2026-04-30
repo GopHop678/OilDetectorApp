@@ -1,7 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:sh="clr-namespace:Sharpnado.Shades;assembly=Sharpnado.Maui.Shadows"
              x:Class="OilDetectorApp.MainPage"
              Title="Датчик нефти"
              Shell.NavBarIsVisible="False"
@@ -27,8 +26,8 @@
         <Border.Stroke>
             <LinearGradientBrush x:Name="AnimatedGradient" StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Color="DarkBlue" Offset="0.0" />
-                <GradientStop Color="#FFFFFF" Offset="0.3" />
-                <GradientStop Color="#FFFFFF" Offset="0.7" />
+                <GradientStop Color="White" Offset="0.3" />
+                <GradientStop Color="White" Offset="0.7" />
                 <GradientStop Color="DarkBlue" Offset="1.0" />
             </LinearGradientBrush>
         </Border.Stroke>
@@ -78,11 +77,11 @@
                         <Setter Property="StrokeShape" Value="RoundRectangle 30"/>
                         <Setter Property="StrokeThickness" Value="1.0"/>
                         <Setter Property="Stroke" Value="#444444"/>
-                        <Setter Property="Shadow">
+                        <!--<Setter Property="Shadow">
                             <Setter.Value>
-                                <Shadow Brush="White" Radius="24" Offset="0,0" Opacity="0.0"/>
+                                <Shadow Brush="White" Radius="24" Offset="0,0" Opacity="1.0"/>
                             </Setter.Value>
-                        </Setter>
+                        </Setter>-->
                         <!-- Градиент фона -->
                         <Setter Property="Background">
                             <Setter.Value>
@@ -103,27 +102,27 @@
                 <VerticalStackLayout Grid.Row="0" Grid.Column="0"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Border x:Name="Led1" Style="{StaticResource LedStyle}"/>
+                    <Border x:Name="Led1" Style="{StaticResource LedStyle}" />
                     <Label x:Name="Status1" 
-               Style="{StaticResource StatusTextStyle}" 
-               Text="Датчик 1"/>
+                           Style="{StaticResource StatusTextStyle}" 
+                           Text="Датчик 1"/>
                 </VerticalStackLayout>
 
                 <!-- Датчик 2 -->
                 <VerticalStackLayout Grid.Row="0" Grid.Column="1"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Border x:Name="Led2" Style="{StaticResource LedStyle}"/>
+                    <Border x:Name="Led2" Style="{StaticResource LedStyle}" />
                     <Label x:Name="Status2" 
-               Style="{StaticResource StatusTextStyle}" 
-               Text="Датчик 2"/>
+                           Style="{StaticResource StatusTextStyle}" 
+                           Text="Датчик 2"/>
                 </VerticalStackLayout>
 
                 <!-- Датчик 3 -->
                 <VerticalStackLayout Grid.Row="0" Grid.Column="2"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Border x:Name="Led3" Style="{StaticResource LedStyle}"/>
+                    <Border x:Name="Led3" Style="{StaticResource LedStyle}" />
                     <Label x:Name="Status3" 
                Style="{StaticResource StatusTextStyle}" 
                Text="Датчик 3"/>
@@ -135,30 +134,30 @@
                 <VerticalStackLayout Grid.Row="1" Grid.Column="0"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Border x:Name="Led4" Style="{StaticResource LedStyle}"/>
+                    <Border x:Name="Led4" Style="{StaticResource LedStyle}" />
                     <Label x:Name="Status4" 
-               Style="{StaticResource StatusTextStyle}" 
-               Text="Датчик 4"/>
+                           Style="{StaticResource StatusTextStyle}" 
+                           Text="Датчик 4"/>
                 </VerticalStackLayout>
 
                 <!-- Датчик 5 -->
                 <VerticalStackLayout Grid.Row="1" Grid.Column="1"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Border x:Name="Led5" Style="{StaticResource LedStyle}"/>
+                    <Border x:Name="Led5" Style="{StaticResource LedStyle}" />
                     <Label x:Name="Status5" 
-               Style="{StaticResource StatusTextStyle}" 
-               Text="Датчик 5"/>
+                           Style="{StaticResource StatusTextStyle}" 
+                           Text="Датчик 5"/>
                 </VerticalStackLayout>
 
                 <!-- Датчик 6 -->
                 <VerticalStackLayout Grid.Row="1" Grid.Column="2"
                          HorizontalOptions="Center" 
                          VerticalOptions="Center">
-                    <Border x:Name="Led6" Style="{StaticResource LedStyle}"/>
+                    <Border x:Name="Led6" Style="{StaticResource LedStyle}" />
                     <Label x:Name="Status6" 
-               Style="{StaticResource StatusTextStyle}" 
-               Text="Датчик 6"/>
+                           Style="{StaticResource StatusTextStyle}" 
+                           Text="Датчик 6"/>
                 </VerticalStackLayout>
 
             </Grid>
@@ -177,7 +176,7 @@
                     VerticalOptions="Center">
                 
                 <Label x:Name="AlarmStatusLabel"
-                       Text=" "
+                       Text=" &#x0a; "
                        TextColor="{StaticResource ColorTextMain}"
                        FontSize="16"
                        FontAttributes="Bold"
