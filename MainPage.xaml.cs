@@ -657,7 +657,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ ПЕРЕПОДКЛЮЧЕНИЯ ==========
     private async void OnInfoClicked(object sender, EventArgs e)
     {
-        AddDataToUI("Получение справки...");
         _ = SendBLEData("?");    
     }
 
