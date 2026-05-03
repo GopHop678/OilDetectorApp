@@ -3,6 +3,7 @@ using Plugin.BLE.Abstractions.Contracts;
 using Plugin.BLE.Abstractions.EventArgs;
 using System.Text;
 using Plugin.BLE.Abstractions;
+using System.Diagnostics;
 
 #if ANDROID
 using Android;
@@ -25,13 +26,14 @@ public partial class MainPage : ContentPage, IDisposable
     private ICharacteristic _notifyCharacteristic;
     private ICharacteristic _writeCharacteristic;
 
+    private bool _isScanning = false;
     private bool _isConnecting = false;
     private bool _isSendingCommand = false;
 
     // Для отслеживания таймаута данных
     private DateTime _lastDataReceivedTime;
     private Timer _dataTimeoutTimer;
-    private const int DATA_TIMEOUT_SECONDS = 10;
+    private const int DATA_TIMEOUT_SECONDS = 5;
 
 
     #region Android Permission Request
@@ -158,17 +160,17 @@ private async Task<bool> EnsurePermissionsAndLocation()
     public MainPage()
     {
         InitializeComponent();
-        AnimateMainBorder();
-        AnimateAlarmBorder();
+        _ = AnimateMainBorder();
+        _ =AnimateAlarmBorder();
         InitializeBluetooth();
 
 #if ANDROID
-        Loaded += async (s, e) => await CheckAndRequestPermissions();
-        //CheckAndRequestPermissions();
+        _ = CheckAndRequestPermissions();
+        Task.Delay(10);
 #endif
 
         // Автоматически начинаем поиск и подключение при запуске
-        Loaded += async (s, e) => await AutoConnectToDevice();
+        _ = AutoConnectToDevice();
     }
 
     public void Dispose()
@@ -177,6 +179,51 @@ private async Task<bool> EnsurePermissionsAndLocation()
         _dataTimeoutTimer?.Dispose();
         _notifyCharacteristic?.StopUpdatesAsync().ConfigureAwait(false);
         _adapter?.DisconnectDeviceAsync(_connectedDevice).ConfigureAwait(false);
+    }
+
+    public async Task DisconnectAndReset()
+    {
+        try
+        {
+            // Отписываемся от событий
+            if (_notifyCharacteristic != null)
+            {
+                _notifyCharacteristic.ValueUpdated -= OnDataReceived;
+                try
+                {
+                    await _notifyCharacteristic.StopUpdatesAsync();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Ошибка: {ex.Message}");
+                }
+                _notifyCharacteristic = null!;
+            }
+
+            // Разрываем соединение
+            if (_connectedDevice != null && _adapter != null)
+            {
+                await _adapter.DisconnectDeviceAsync(_connectedDevice);
+                await Task.Delay(500);
+            }
+
+            _connectedDevice = null!;
+            _writeCharacteristic = null!;
+
+            _dataTimeoutTimer?.Dispose();
+            _dataTimeoutTimer = null!;
+
+            _isScanning = false;
+            _isConnecting = false;
+            _isSendingCommand = false;
+
+            ResetGui();
+            _ = TryReconnect();
+        }
+        catch (Exception) 
+        {
+            AddDataToUI("Ошибка при отключении от устройства. Перезапустите приложение и устройство.");
+        }
     }
 
     private void InitializeBluetooth()
@@ -239,8 +286,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     AlarmThreshold.MinimumTrackColor = themeColor;
                     AlarmThreshold.ThumbColor = themeColor;
 
-                    Sensetivity.MinimumTrackColor = themeColor;
-                    Sensetivity.ThumbColor = themeColor;
+                    SensetivitySlider.MinimumTrackColor = themeColor;
+                    SensetivitySlider.ThumbColor = themeColor;
 
                     // Красная рамка при тревоге
                     animatedGradient.GradientStops[0].Color = Colors.IndianRed;
@@ -256,8 +303,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     AlarmThreshold.MinimumTrackColor = themeColor;
                     AlarmThreshold.ThumbColor = themeColor;
 
-                    Sensetivity.MinimumTrackColor = themeColor;
-                    Sensetivity.ThumbColor = themeColor;
+                    SensetivitySlider.MinimumTrackColor = themeColor;
+                    SensetivitySlider.ThumbColor = themeColor;
 
                     // Обычная рамка при отсутствии тревоги
                     animatedGradient.GradientStops[0].Color = themeColor;
@@ -328,17 +375,11 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== АВТОМАТИЧЕСКОЕ ПОДКЛЮЧЕНИЕ ==========
     private async Task AutoConnectToDevice()
     {
-        // Ждем включения Bluetooth
         UpdateConnectionStatus("Ожидание Bluetooth...");
         while (true)
         {
-            if (_bluetoothLE.State != BluetoothState.On)
-            {
-                await Task.Delay(2000);
-            }
-            else {
-                break;
-            }
+            if (_bluetoothLE.State != BluetoothState.On) await Task.Delay(2000);
+            else break;
         }
 
         // ✅ Проверяем разрешения и геолокацию для отладки
@@ -352,26 +393,23 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
         UpdateConnectionStatus("Поиск устройства...");
 
-
-        // Создаем фильтр для сканирования по Service UUID
-        var scanFilterOptions = new ScanFilterOptions
-        {
-            DeviceNames = ["ESP32_Oil_Detector_DonskoyPN"],
-        };
-
         while (true)
         {
+            if (_connectedDevice != null || _isScanning) break;
+            _isScanning = true;
+
             // Настройка таймаута сканирования BL устройств
             _adapter.ScanTimeout = 3000;
 
             // Сканируем 3 секунды
-            await _adapter.StartScanningForDevicesAsync();
-            //await Task.Delay(3000);
+            // Не ожидаем StartScanningForDevicesAsync, т.к. он блокирует интерфейс
+            _ = _adapter.StartScanningForDevicesAsync();
+            await Task.Delay(3000);
             await _adapter.StopScanningForDevicesAsync();
 
             // Ищем ESP32 среди найденных устройств
             var devices = _adapter.DiscoveredDevices;
-            IDevice targetDevice = null;
+            IDevice targetDevice = null!;
 
             if (devices == null || devices.Count == 0)
             {
@@ -391,7 +429,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 // Ищем по имени ESP32
                 if (!string.IsNullOrEmpty(device.Name) &&
                     (device.Name.Contains("ESP32") ||
-                     device.Name.Contains("Oil_Detector")))
+                        device.Name.Contains("Oil_Detector")))
                 {
                     targetDevice = device;
                     break;
@@ -404,7 +442,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 continue;
             }
             // Подключаемся
-            await ConnectToDevice(targetDevice);
+            _ = ConnectToDevice(targetDevice);
+            _isScanning = false;
             break;
         }
     }
@@ -413,11 +452,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ПОДКЛЮЧЕНИЕ К УСТРОЙСТВУ ==========
     private async Task ConnectToDevice(IDevice device)
     {
-        if (_isConnecting)
-        {
-            return;
-        }
-
+        if (_isConnecting) return;
         _isConnecting = true;
 
         try
@@ -436,7 +471,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             catch (Exception ex)
             {
                 AddDataToUI($"⚠️ Не удалось установить MTU: {ex.Message}");
-                await TryReconnect();
+                throw;
             }
 
             // Небольшая задержка для стабилизации
@@ -447,36 +482,18 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             // Ищем наш сервис по UUID
             var targetService = services.FirstOrDefault(s => s.Id == SERVICE_UUID);
-
-            if (targetService == null)
-            {
-                AddDataToUI($"❌ Сервис {SERVICE_UUID} не найден!");
-                await TryReconnect();
-                return;
-            }
+            if (targetService == null) throw new Exception($"Сервис {SERVICE_UUID} не найден!");
 
             // Получаем характеристики
             var characteristics = await targetService.GetCharacteristicsAsync();
 
             // Ищем TX характеристику
             var txCharacteristic = characteristics.FirstOrDefault(c => c.Id == TX_CHARACTERISTIC_UUID);
-
-            if (txCharacteristic == null)
-            {
-                AddDataToUI("❌ TX характеристика не найдена!");
-                await TryReconnect();
-                return;
-            }
+            if (txCharacteristic == null) throw new Exception("TX характеристика не найдена!");
 
             // Ищем RX характеристику
             var rxCharacteristic = characteristics.FirstOrDefault(c => c.Id == RX_CHARACTERISTIC_UUID);
-
-            if (rxCharacteristic == null)
-            {
-                AddDataToUI("❌ RX характеристика не найдена!");
-                await TryReconnect();
-                return;
-            }
+            if (rxCharacteristic == null) throw new Exception("RX характеристика не найдена!");
 
             _notifyCharacteristic = txCharacteristic;
             _writeCharacteristic = rxCharacteristic;
@@ -486,25 +503,12 @@ private async Task<bool> EnsurePermissionsAndLocation()
             await _notifyCharacteristic.StartUpdatesAsync();
 
             _isConnecting = false;
-
-            // ✅ ЗАПУСКАЕМ МОНИТОРИНГ ТАЙМАУТА
-            StartTimeoutMonitor();
-            ResetGui();
         }
         catch (Exception ex)
         {
             UpdateConnectionStatus("Ошибка подключения");
             AddDataToUI($"❌ Ошибка: {ex.Message}");
-
-            if (_notifyCharacteristic != null)
-            {
-                _notifyCharacteristic.ValueUpdated -= OnDataReceived;
-                _notifyCharacteristic = null;
-            }
-
-            _isConnecting = false;
-            _connectedDevice = null;
-            await TryReconnect();
+            _ = DisconnectAndReset();
         }
     }
 
@@ -516,6 +520,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         // Обновляем время последнего получения данных для отслеживания таймаута
         _lastDataReceivedTime = DateTime.Now;
+        _ = SyncWithServer();
 
         var bytes = e.Characteristic.Value;
         if (bytes != null && bytes.Length > 0)
@@ -541,12 +546,16 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                     string threshold = dict["Threshold"].Replace(".", ",");
                     string feedString = " ";
+                    int feedStringLength = 0;
 
                     foreach (string key in dict.Keys)
                     {
                         // Ключи датчиков
                         if (key.Contains("Led"))
                         {
+                            if (feedStringLength % 3 == 0) feedString += "\n";
+                            feedStringLength++;
+
                             feedString += key.Replace("Led", "Датчик ") + ": " + dict[key].PadRight(10) + " ";
                             string lightLevel = dict[key].Replace(".", ",");
                             ledsToReset.Remove(key);
@@ -585,7 +594,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                     AddDataToUI(feedString);
                 }
-                else AddDataToUI(data.Replace("|", "   "));
+                else AddDataToUI("\n" + data.Replace("|", "   "));
 
                 foreach (string led in ledsToReset)
                 {
@@ -601,34 +610,18 @@ private async Task<bool> EnsurePermissionsAndLocation()
         MainThread.BeginInvokeOnMainThread(() =>
         {
             UpdateConnectionStatus("Подключен");
+            _ = SyncWithServer();
+
+            // ✅ ЗАПУСКАЕМ МОНИТОРИНГ ТАЙМАУТА
+            StartTimeoutMonitor();
+            ResetGui();
         });
     }
 
 
     private async void OnDeviceDisconnected(object sender, DeviceEventArgs args)
     {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            UpdateConnectionStatus("Потеря соединения");
-        });
-
-        _connectedDevice = null;
-        _notifyCharacteristic = null;
-
-        while (true)
-        {
-            // Автоматически пробуем переподключиться через 5 секунд
-            await Task.Delay(5000);
-            if (_connectedDevice != null)
-            {
-                break;
-            }
-            if (_bluetoothLE.State == BluetoothState.On)
-            {
-                AddDataToUI("🔄 Попытка автоматического переподключения...");
-                await AutoConnectToDevice();
-            }
-        }
+        MainThread.BeginInvokeOnMainThread(() => {});
     }
 
 
@@ -637,18 +630,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // =============================================
     private async Task TryReconnect()
     {
-        UpdateConnectionStatus("Потеря соединения");
-
-        // Останавливаем таймер таймаута
-        _dataTimeoutTimer?.Dispose();
-        _dataTimeoutTimer = null;
-
-        _isConnecting = false;
-        _connectedDevice = null;
-        _notifyCharacteristic = null;
-
-        ResetGui();
-
         while (true)
         {
             if (_connectedDevice != null)
@@ -660,7 +641,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 UpdateConnectionStatus("Переподключение...");
                 await AutoConnectToDevice();
             }
-            // Автоматически пробуем переподключиться через 5 секунд
             await Task.Delay(5000);
         }
     }
@@ -669,18 +649,16 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ ПЕРЕПОДКЛЮЧЕНИЯ ==========
     private async void OnReconnectClicked(object sender, EventArgs e)
     {
-        // Отключаем кнопку, чтобы избежать повторных нажатий
-        var button = (Button)sender;
-        button.IsEnabled = false;
+        AddDataToUI("🔄 Выполняется переподключение...");
+        _ = DisconnectAndReset();    
+    }
 
-        try
-        {
-            await TryReconnect();
-        }
-        finally
-        {
-            button.IsEnabled = true;
-        }
+
+    // ========== ОБРАБОТЧИК КНОПКИ ПЕРЕПОДКЛЮЧЕНИЯ ==========
+    private async void OnInfoClicked(object sender, EventArgs e)
+    {
+        AddDataToUI("Получение справки...");
+        _ = SendBLEData("?");    
     }
 
     protected override async void OnDisappearing()
@@ -753,38 +731,26 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
 
     // ========== ОБРАБОТЧИК ПОЛЗУНКА ЧУВСТВИТЕЛЬНОСТИ ==========
-    private async void SensetivityValueChanged(object sender, ValueChangedEventArgs e)
+    private async void SensetivitySliderValueChanged(object sender, ValueChangedEventArgs e)
     {
-        var slider = (Slider)sender;
         int newValue = (int)Math.Round(e.NewValue);
-
-        // Обновляем отображаемое значение (если есть Label)
-        SensetivityValueLabel.Text = newValue.ToString();
+        int valueToSend;
+        if (newValue == 0) valueToSend = 31;
+        else valueToSend = 100;
 
         // Блокируем повторные вызовы во время отправки
         if (_isSendingCommand) return;
         _isSendingCommand = true;
 
-        try
-        {
-            // Формируем команду: T + значение
-            string command = $"T{newValue}";
+        // Формируем команду: T + значение
+        string command = $"T{valueToSend}";
+        await SendBLEData(command);
 
-            // Отправляем на ESP32
-            await SendBLEData(command);
+        // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+        //SensetivityValueLabel.Text = newValue.ToString();
+        SensetivitySlider.Value = newValue;
 
-            // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
-            SensetivityValueLabel.Text = newValue.ToString();
-            Sensetivity.Value = newValue;
-        }
-        catch (Exception ex)
-        {
-            AddDataToUI($"❌ Ошибка отправки: {ex.Message}");
-        }
-        finally
-        {
-            _isSendingCommand = false;
-        }
+        _isSendingCommand = false;
     }
 
 
@@ -793,39 +759,21 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            AddDataToUI("Отправвка,,,");
-
-
-            var slider = (Slider)sender;
             int newValue = (int)Math.Round(e.NewValue);
 
-            // Обновляем отображаемое значение (если есть Label)
-            ThresholdValueLabel.Text = newValue.ToString();
-
-            // Блокируем повторные вызовы во время отправки
+            // Блокируем повторные вызовы во время отправки или подключения
             if (_isSendingCommand) return;
             _isSendingCommand = true;
 
-            try
-            {
-                // Формируем команду: S + значение
-                string command = $"S{newValue}";
+            // Формируем команду: S + значение
+            string command = $"S{newValue}";
+            await SendBLEData(command);
 
-                // Отправляем на ESP32
-                await SendBLEData(command);
+            // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+            ThresholdValueLabel.Text = newValue.ToString();
+            AlarmThreshold.Value = newValue;
 
-                // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
-                ThresholdValueLabel.Text = newValue.ToString();
-                AlarmThreshold.Value = newValue;
-            }
-            catch (Exception ex)
-            {
-                AddDataToUI($"❌ Ошибка отправки: {ex.Message}");
-            }
-            finally
-            {
-                _isSendingCommand = false;
-            }
+            _isSendingCommand = false;
         });
     }
 
@@ -833,25 +781,19 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ============================================
     // ========== ОТПРАВКА ДАННЫХ ПО BLE ==========
     // ============================================
-    private async Task SendBLEData(string data)
+    private async Task SendBLEData(string command)
     {
-        if (_writeCharacteristic == null)
-        {
-            AddDataToUI("❌ BLE характеристика не инициализирована");
-            await TryReconnect();
-            return;
-        }
-
+        if (_connectedDevice == null || _isScanning || _isConnecting) return;
         try
         {
-            var bytes = Encoding.UTF8.GetBytes(data);
-            await _writeCharacteristic.WriteAsync(bytes);
-            //AddDataToUI($"✅ Чувствительность изменена");
+            var bytes = Encoding.UTF8.GetBytes(command);
+            if (_writeCharacteristic != null) await _writeCharacteristic.WriteAsync(bytes);
+            else throw new Exception();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            AddDataToUI($"❌ Ошибка BLE записи: {ex.Message}");
-            TryReconnect();
+            AddDataToUI($"❌ Не удалось установить параметры.");
+            if (_connectedDevice != null) _ = DisconnectAndReset();
         }
     }
 
@@ -899,7 +841,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
         _lastDataReceivedTime = DateTime.Now;
 
         // Запускаем таймер, который проверяет каждые 5 секунд
-        _dataTimeoutTimer = new Timer(CheckTimeout, null, 100, 5000);
+        _dataTimeoutTimer = new Timer(CheckTimeout, null, 100, 3000);
     }
 
 
@@ -914,7 +856,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             {
                 UpdateConnectionStatus("Потеря соединения");
                 AddDataToUI("🔄 Попытка автоматического переподключения...");
-                await TryReconnect();
+                await DisconnectAndReset();
             });
         }
     }
@@ -1031,19 +973,19 @@ private async Task<bool> EnsurePermissionsAndLocation()
             AlarmStatusBorder.Background = Colors.White;
             AlarmStatusLabel.Text = " \n ";
 
-            // ✅ Временно отключаем обработчики событий
-            AlarmThreshold.ValueChanged -= ThresholdValueChanged;
-            Sensetivity.ValueChanged -= SensetivityValueChanged;
+            //// ✅ Временно отключаем обработчики событий
+            //AlarmThreshold.ValueChanged -= ThresholdValueChanged;
+            //Sensetivity.ValueChanged -= SensetivityValueChanged;
 
-            // Устанавливаем значения
-            AlarmThreshold.Value = 10;
-            ThresholdValueLabel.Text = "10";
-            Sensetivity.Value = 31;
-            SensetivityValueLabel.Text = "31";
+            //// Устанавливаем значения
+            //AlarmThreshold.Value = 10;
+            //ThresholdValueLabel.Text = "10";
+            //Sensetivity.Value = 31;
+            //SensetivityValueLabel.Text = "31";
 
-            // ✅ Возвращаем обработчики обратно
-            AlarmThreshold.ValueChanged += ThresholdValueChanged;
-            Sensetivity.ValueChanged += SensetivityValueChanged;
+            //// ✅ Возвращаем обработчики обратно
+            //AlarmThreshold.ValueChanged += ThresholdValueChanged;
+            //Sensetivity.ValueChanged += SensetivityValueChanged;
 
             AnimatedGradient.GradientStops[0].Color = Colors.DarkBlue;
             AnimatedGradient.GradientStops[3].Color = Colors.DarkBlue;
@@ -1051,11 +993,23 @@ private async Task<bool> EnsurePermissionsAndLocation()
             AlarmThreshold.MinimumTrackColor = Colors.DarkBlue;
             AlarmThreshold.ThumbColor = Colors.DarkBlue;
 
-            Sensetivity.MinimumTrackColor = Colors.DarkBlue;
-            Sensetivity.ThumbColor = Colors.DarkBlue;
+            SensetivitySlider.MinimumTrackColor = Colors.DarkBlue;
+            SensetivitySlider.ThumbColor = Colors.DarkBlue;
         });
     }
 
+    private async Task SyncWithServer()
+    {
+        int thresholdValue = (int)Math.Round(AlarmThreshold.Value);
+        string command = $"S{thresholdValue}";
+        await SendBLEData(command);
+
+        int sensetivityValue = (int)Math.Round(SensetivitySlider.Value);
+        if (sensetivityValue == 0) command = $"T{31}";
+        else command = $"T{100}";
+        await SendBLEData(command);
+
+    }
 
     // ========== ПОЛУЧЕНИЕ РАНДОМНОЙ ЗАДЕРЖКИ ==========
     private int GetRandomDelay()

@@ -373,21 +373,22 @@ public:
     }
     
     String getVerboseStatus() {
-        String status = "=== SENSOR STATUS ===\r\n";
-        for (int i = 0; i < sensorCount; i++) {
-            status += sensors[i]->getName() + ":\r\n";
-            status += "  Fluo: " + String(sensors[i]->getValue(), 1) + " um\r\n";
-            status += "  Alarm: " + String(sensors[i]->isAlarm() ? "ON" : "OFF") + "\r\n";
-            status += "  Counter: " + String(sensors[i]->getAlarmCounter()) + "/" + String(ALARM_CONFIRM_COUNT) + "\r\n";
-            status += "  Von: " + String(sensors[i]->getValueOn(), 1) + " um\r\n";
-            status += "  Voff: " + String(sensors[i]->getValueOff(), 1) + " um\r\n";
-        }
-        status += "=== COMMON SETTINGS ===\r\n";
-        status += "Global Threshold: " + String(globalThreshold) + " um\r\n";
-        status += "MTreg: " + String(bh1750_mtreg) + "\r\n";
-        status += "Max range: ~" + String(54612.0 * (69.0 / bh1750_mtreg), 0) + " um\r\n";
-        status += "Exposure time: " + String(uvExposureTime) + " ms\r\n";
-        status += "Simulation Mode: " + String(simulationMode ? "ON" : "OFF") + "\r\n";
+        String status = "======= СТАТУС =======\r\n";
+        // for (int i = 0; i < sensorCount; i++) {
+        //     status += sensors[i]->getName() + ":\r\n";
+        //     status += "  Fluo: " + String(sensors[i]->getValue(), 1) + " um\r\n";
+        //     status += "  Alarm: " + String(sensors[i]->isAlarm() ? "ON" : "OFF") + "\r\n";
+        //     status += "  Counter: " + String(sensors[i]->getAlarmCounter()) + "/" + String(ALARM_CONFIRM_COUNT) + "\r\n";
+        //     status += "  Von: " + String(sensors[i]->getValueOn(), 1) + " um\r\n";
+        //     status += "  Voff: " + String(sensors[i]->getValueOff(), 1) + " um\r\n";
+        // }
+        // status += "=== ОБЩИЕ НАСТРОЙКИ ===\r\n";
+        status += "Порог: " + String(globalThreshold) + " мкм\r\n";
+        status += "Чувствительность: " + String(bh1750_mtreg) + "\r\n";
+        status += "Тревога : " + String(isAnyAlarm() ? "ДА" : "НЕТ") + "\r\n";
+        status += "Макс. дальность: ~" + String(54612.0 * (69.0 / bh1750_mtreg), 0) + " um\r\n";
+        status += "Время засветки: " + String(uvExposureTime) + " мс\r\n";
+        status += "Симуляция данных: " + String(simulationMode ? "ДА" : "НЕТ") + "\r\n";
         status += "======================\r\n";
         return status;
     }

@@ -16,6 +16,7 @@
         <Color x:Key="ColorTextMain">Black</Color>
         <Color x:Key="ColorTextSecondary">LightGrey</Color>
         <Color x:Key="ColorTextThird">Grey</Color>
+        <x:Double x:Key="IconSize">20</x:Double>
     </ContentPage.Resources>
 
     <Border x:Name="MainBorder"
@@ -196,19 +197,19 @@
                        FontAttributes="Bold"/>
 
                     <Grid>
-                        <Label Grid.Row="0"
+                        <Label Grid.Column="0"
                            Text="0"
                            FontSize="12"
                            TextColor="{StaticResource ColorTextThird}"
                            HorizontalOptions="Start"/>
-                        <Label Grid.Row="1"
+                        <Label Grid.Column="1"
                            x:Name="ThresholdValueLabel"
                            Text="10"
                            FontSize="14"
                            FontAttributes="Bold"
                            TextColor="{StaticResource ColorTextMain}"
                            HorizontalOptions="Center"/>
-                        <Label Grid.Row="2"
+                        <Label Grid.Column="2"
                            Text="100"
                            FontSize="12"
                            TextColor="{StaticResource ColorTextThird}"
@@ -234,61 +235,116 @@
                        FontAttributes="Bold"/>
 
                     <Grid>
-                        <Label Grid.Row="0"
-                           Text="31"
+                        <Label Grid.Column="0"
+                           Text="Меньше"
                            FontSize="12"
                            TextColor="{StaticResource ColorTextThird}"
                            HorizontalOptions="Start"/>
-                        <Label Grid.Row="1"
+                        <!--<Label Grid.Column="1"
                            x:Name="SensetivityValueLabel"
                            Text="31"
                            FontSize="14"
                            FontAttributes="Bold"
                            TextColor="{StaticResource ColorTextMain}"
-                           HorizontalOptions="Center"/>
-                        <Label Grid.Row="2"
-                           Text="254"
+                           HorizontalOptions="Center"/>-->
+                        <Label Grid.Column="1"
+                           Text="Больше"
                            FontSize="12"
                            TextColor="{StaticResource ColorTextThird}"
                            HorizontalOptions="End"/>
                     </Grid>
 
-                    <Slider x:Name="Sensetivity"
-                        Minimum="31"
-                        Maximum="254"
-                        Value="31"
-                        ValueChanged="SensetivityValueChanged"
-                        MinimumTrackColor="DarkBlue"
-                        MaximumTrackColor="LightGray"
-                        ThumbColor="DarkBlue"/>
-
+                    <Slider x:Name="SensetivitySlider"
+                            Minimum="0"
+                            Maximum="1"
+                            Value="0"
+                            ValueChanged="SensetivitySliderValueChanged"
+                            MinimumTrackColor="DarkBlue"
+                            MaximumTrackColor="LightGray"
+                            ThumbColor="DarkBlue"/>
                 </VerticalStackLayout>
 
             </VerticalStackLayout>
 
             <!-- Отображение данных датчика -->
-            <Border Grid.Row="4"
+            <Border x:Name="ConsoleWindow"
+                    Grid.Row="4"
                     Margin="20,0,20,20"
-                    BackgroundColor="DimGrey" 
-                    Stroke="Grey"
-                    StrokeShape="RoundRectangle 5"
+                    BackgroundColor="#142C6E" 
+                    Stroke="LightGrey"
+                    StrokeShape="RoundRectangle 10"
                     StrokeThickness="3">
                 <Grid RowDefinitions="Auto, *">
-                    <Label Grid.Row="0"
-                        Text="📊 Консоль:" 
-                       Margin="7"
-                       TextColor="LightGray"
-                       HorizontalTextAlignment="Center"
-                       FontAttributes="Bold"/>
+                    <Grid Grid.Row="0" 
+                          ColumnDefinitions="*, *, *"
+                          Padding="10,5"
+                          >
+                        <Grid.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#3B6EC4" Offset="0.0"/>
+                                <GradientStop Color="#1A3C8C" Offset="0.5"/>
+                                <GradientStop Color="#142C6E" Offset="0.75"/>
+                            </LinearGradientBrush>
+                        </Grid.Background>
 
-                    <ScrollView Grid.Row="1" x:Name="DataScrollView" Margin="5">
-                        <StackLayout x:Name="DataContainer" Spacing="5">
-                            <Label x:Name="EmptyDataLabel"
-                               Text="Ожидание данных..." 
+                        <!-- Кнопка в столбце 0 -->
+                        <Border Grid.Column="0"
+                                BackgroundColor="Transparent"
+                                VerticalOptions="Fill"
+                                HorizontalOptions="Fill"
+                                StrokeThickness="0">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnReconnectClicked"/>
+                            </Border.GestureRecognizers>
+                            <Image Source="reconnect_icon.png"
+                                   HeightRequest="{StaticResource IconSize}"
+                                   WidthRequest="{StaticResource IconSize}"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center"/>
+                        </Border>
+
+                        <!-- Заголовок в столбце 1 (центр) -->
+                        <Label Grid.Column="1"
+                               Text="📊 Консоль:" 
                                TextColor="LightGray"
-                               HorizontalOptions="Center"/>
-                        </StackLayout>
-                    </ScrollView>
+                               HorizontalTextAlignment="Center"
+                               FontAttributes="Bold"
+                               VerticalOptions="Center"/>
+
+                        <!-- Кнопка в столбце 2 -->
+                        <Border Grid.Column="2"
+                                BackgroundColor="Transparent"
+                                VerticalOptions="Fill"
+                                HorizontalOptions="Fill"
+                                StrokeThickness="0">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnInfoClicked"/>
+                            </Border.GestureRecognizers>
+                            <Image Source="info_icon.png"
+                                   HeightRequest="{StaticResource IconSize}"
+                                   WidthRequest="{StaticResource IconSize}"
+                                   HorizontalOptions="Center"
+                                   VerticalOptions="Center"/>
+                        </Border>
+                    </Grid>
+
+                    <Border Grid.Row="1"
+                            Background="DimGray"
+                            StrokeShape="RoundRectangle 5"
+                            Margin="5, 0, 5, 5"
+                            Padding="10"
+                            
+                            Stroke="LightGrey">
+                        <ScrollView x:Name="DataScrollView" >
+                            <StackLayout x:Name="DataContainer" 
+                                         Spacing="5">
+                                <Label x:Name="EmptyDataLabel"
+                                   Text="Ожидание данных..." 
+                                   TextColor="LightGray"
+                                   HorizontalOptions="Center"/>
+                            </StackLayout>
+                        </ScrollView>
+                    </Border>
                 </Grid>
             </Border>
         </Grid>
