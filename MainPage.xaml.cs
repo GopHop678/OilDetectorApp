@@ -301,7 +301,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     };
 
                     gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#FF9999"), 0.0f));
-                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#FF6666"), 0.5f));
+                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#CC5252"), 0.5f));
                     gradient.GradientStops.Add(new GradientStop(themeColor, 0.75f));
 
                     BtnGrid.Background = gradient;
@@ -358,7 +358,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ===================================================
     // ========== ДОБАВЛЕНИЕ ДАННЫХ В КОНСОЛЬ ============
     // ===================================================
-    private void AddDataToUI(string data)
+    private void AddDataToUI(string data, bool isCentered=false)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -584,7 +584,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                         // Ключи датчиков
                         if (key.Contains("Led"))
                         {
-                            if (feedStringLength % 3 == 0) feedString += "\n";
+                            if (feedStringLength % 3 == 0) feedString += "\n            ";
                             feedStringLength++;
 
                             feedString += key.Replace("Led", "Датчик ") + ": " + dict[key].PadRight(10) + " ";
@@ -691,7 +691,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ СПРАВКИ ==========
     private async void OnInfoClicked(object sender, EventArgs e)
     {
-        _ = SendBLEData("?");    
+        await SendBLEData("?");    
     }
 
     protected override async void OnDisappearing()

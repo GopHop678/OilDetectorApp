@@ -1,0 +1,686 @@
+/*
+   УФ-детектор нефтяной плёнки для ESP32 (6 датчиков через мультиплексор)
+   ПИТАНИЕ ОТ ПОВЕРБАНКА (5В)
+
+   - BLE (для iPhone) с командами: R, C, S, T, L, ?
+   - Автосброс тревоги через 5 секунд чистоты
+   - НАСТРОЙКА ЧУВСТВИТЕЛЬНОСТИ BH1750 (MTreg) по BLE
+   - НАСТРОЙКА ВРЕМЕНИ ЗАСВЕТКИ УФ-ДИОДА по BLE
+   - ПОДТВЕРЖДЕНИЕ ТРЕВОГИ: 3 ЗАМЕРА ПОДРЯД
+   - ОТОБРАЖЕНИЕ V_on и V_off в BLE
+   - ПОДДЕРЖКА 6 ДАТЧИКОВ BH1750 (мультиплексор TCA9548A)
+
+   Пины:
+     GPIO4  - УФ-светодиод
+     GPIO5  - пьезоизлучатель
+     GPIO18 - зелёный LED
+     GPIO19 - красный LED
+     
+   I2C для мультиплексора: SDA=21, SCL=22
+*/
+
+#include <Wire.h>
+#include <BH1750.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+// ========== НАСТРОЙКИ BLE ==========
+#define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+BLECharacteristic *pTxCharacteristic;
+bool deviceConnected = false;
+
+// ========== ПИНЫ ==========
+const int UV_LED_PIN = 4;
+const int ALARM_PIN = 5;
+const int POWER_LED_PIN = 18;
+const int ALARM_LED_PIN = 19;
+
+// ========== МУЛЬТИПЛЕКСОР TCA9548A ==========
+#define TCAADDR 0x70
+const int MAX_SENSORS = 6;
+const int SENSOR_CHANNELS[MAX_SENSORS] = {0, 1, 2, 3, 4, 5};
+const char* SENSOR_NAMES[MAX_SENSORS] = {"Led1", "Led2", "Led3", "Led4", "Led5", "Led6"};
+
+// ========== НАСТРОЙКИ ДАТЧИКОВ ==========
+const int MIN_EXPOSURE = 50;
+const int MAX_EXPOSURE = 3000;
+const int ALARM_CONFIRM_COUNT = 1; // срабатываний для тревоги - 3 раза
+const unsigned long CLEAN_DELAY = 3000; // задержка до сброса тревоги - 5000 мс
+
+// ========== НАСТРОЙКИ СИМУЛЯЦИИ ==========
+bool simulationMode = false;
+const float SIM_MIN_VALUE = 10;
+const float SIM_MAX_VALUE = 200;
+
+// ========== ГЛОБАЛЬНЫЕ НАСТРОЙКИ ==========
+uint8_t bh1750_mtreg = 31;
+uint8_t globalThreshold = 10;
+int uvExposureTime = 600;
+
+// ========== ЖУРНАЛ СОБЫТИЙ ==========
+const int MAX_LOG_ENTRIES = 50;
+String logEntries[MAX_LOG_ENTRIES];
+int logIndex = 0;
+int logCount = 0;
+
+// ========== ПРОТОТИПЫ ==========
+void addLogEntry(const String& entry);
+void selectChannel(uint8_t channel);
+
+// ========== КЛАСС ДАТЧИКА ==========
+class OilDetector {
+private:
+    String name;
+    uint8_t channel;
+    uint8_t address;
+    BH1750 sensor;
+    
+    float backgroundValue;
+    float uvValue;
+    float currentValue;
+    bool _isAlive;
+    bool alarmTriggered;
+    int alarmConfirmCounter;
+    float lastValueOn;
+    float lastValueOff;
+    unsigned long cleanStartTime;
+    
+public:
+    OilDetector(const char* detectorName, uint8_t i2cChannel, uint8_t i2cAddr) 
+        : name(detectorName), channel(i2cChannel), address(i2cAddr) {
+        currentValue = 0;
+        backgroundValue = 0;
+        uvValue = 0;
+        _isAlive = true;
+        alarmTriggered = false;
+        alarmConfirmCounter = 0;
+        lastValueOn = 0;
+        lastValueOff = 0;
+        cleanStartTime = 0;
+    }
+    
+    bool begin() {
+        selectChannel(channel);
+        return sensor.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, address);
+    }
+    
+    void setSensitivity(uint8_t mtreg) {
+        selectChannel(channel);
+        sensor.setMTreg(mtreg);
+    }
+
+    bool checkConnection() {
+        selectChannel(channel);
+        Wire.beginTransmission(address);
+        return (Wire.endTransmission() == 0);
+    }
+    
+    void measureBackground() {
+        selectChannel(channel);
+        backgroundValue = sensor.readLightLevel();
+    }
+    
+    void measureWithUV() {
+        selectChannel(channel);
+        uvValue = sensor.readLightLevel();
+        lastValueOn = uvValue;
+    }
+    
+    void calculateValue() {
+        float net = uvValue - backgroundValue;
+        currentValue = (net < 0) ? 0 : net;
+        lastValueOff = backgroundValue;
+    }
+    
+    bool updateAlarm() {
+        bool currentlyClean = (currentValue < globalThreshold);
+        
+        if (!currentlyClean) {
+            alarmConfirmCounter++;
+            if (alarmConfirmCounter > ALARM_CONFIRM_COUNT) {
+                alarmConfirmCounter = ALARM_CONFIRM_COUNT;
+            }
+            if (alarmConfirmCounter >= ALARM_CONFIRM_COUNT && !alarmTriggered) {
+                alarmTriggered = true;
+                cleanStartTime = 0;
+                addLogEntry("[" + name + "] 🚨 Alarm confirmed (" + String(ALARM_CONFIRM_COUNT) + " consecutive measurements)");
+            }
+        } else {
+            if (alarmConfirmCounter > 0) {
+                alarmConfirmCounter = 0;
+            }
+        }
+        
+        if (alarmTriggered && currentlyClean) {
+            if (cleanStartTime == 0) {
+                cleanStartTime = millis();
+            } else if (millis() - cleanStartTime >= CLEAN_DELAY) {
+                alarmTriggered = false;
+                cleanStartTime = 0;
+                alarmConfirmCounter = 0;
+                addLogEntry("[" + name + "] Alarm reset (clean for >" + String(CLEAN_DELAY/1000) + " sec)");
+            }
+        } else if (!currentlyClean && !alarmTriggered) {
+            cleanStartTime = 0;
+        } else if (alarmTriggered && !currentlyClean) {
+            cleanStartTime = 0;
+        }
+        
+        return alarmTriggered;
+    }
+    
+    void resetAlarm() {
+        if (alarmTriggered) {
+            alarmTriggered = false;
+            cleanStartTime = 0;
+            alarmConfirmCounter = 0;
+            addLogEntry("[" + name + "] Alarm reset (manual reset)");
+        }
+    }
+    
+    void calibrate() {
+        globalThreshold = currentValue + 10;
+        if (globalThreshold > 1000) globalThreshold = 1000;
+        addLogEntry("[" + name + "] Calibration: new global threshold " + String(globalThreshold) + " um");
+    }
+    
+    // Getters
+    String getName() { return name; }
+    float getValue() { return currentValue; }
+    bool isAlarm() { return alarmTriggered; }
+    float getValueOn() { return lastValueOn; }
+    float getValueOff() { return lastValueOff; }
+    int getAlarmCounter() { return alarmConfirmCounter; }
+    bool isAlive() { return _isAlive; }
+    void setAlive(bool alive) { _isAlive = alive; }
+};
+
+// ========== КЛАСС УПРАВЛЕНИЯ ДАТЧИКАМИ ==========
+class OilDetectorManager {
+private:
+    OilDetector* sensors[MAX_SENSORS];
+    int sensorCount;
+    
+public:
+    OilDetectorManager() : sensorCount(0) {}
+    
+    void begin() {
+        Wire.begin();
+        
+        for (int i = 0; i < MAX_SENSORS; i++) {
+            selectChannel(SENSOR_CHANNELS[i]);
+            
+            bool found = false;
+            
+            Wire.beginTransmission(0x23);
+            if (Wire.endTransmission() == 0) {
+                addSensor(SENSOR_NAMES[i], 0x23, SENSOR_CHANNELS[i]);
+                found = true;
+            } else {
+                Wire.beginTransmission(0x5C);
+                if (Wire.endTransmission() == 0) {
+                    addSensor(SENSOR_NAMES[i], 0x5C, SENSOR_CHANNELS[i]);
+                    found = true;
+                }
+            }
+            
+            if (!found) {
+                addLogEntry("ERROR: Sensor " + String(SENSOR_NAMES[i]) + " not found on channel " + String(SENSOR_CHANNELS[i]));
+            }
+        }
+        
+        addLogEntry("Initialized " + String(sensorCount) + "/" + String(MAX_SENSORS) + " sensors");
+    }
+    
+    void addSensor(const char* name, uint8_t address, uint8_t channel) {
+        if (sensorCount < MAX_SENSORS) {
+            sensors[sensorCount] = new OilDetector(name, channel, address);
+            if (sensors[sensorCount]->begin()) {
+                addLogEntry("Sensor " + String(name) + " (ch " + String(channel) + ", addr 0x" + String(address, HEX) + ") initialized");
+                sensorCount++;
+            }
+        }
+    }
+    
+    void setSensitivity(uint8_t mtreg) {
+        for (int i = 0; i < sensorCount; i++) {
+            sensors[i]->setSensitivity(mtreg);
+        }
+    }
+    
+    void measureBackgroundAll() {
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive()) {
+                sensors[i]->measureBackground();
+            }
+        }
+    }
+    
+    void measureWithUVAll() {
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive()) {
+                sensors[i]->measureWithUV();
+            }
+        }
+    }
+    
+    void calculateAll() {
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive()) {
+                sensors[i]->calculateValue();
+            }
+        }
+    }
+    
+    void checkAllSensorsHealth() {
+        for (int i = 0; i < sensorCount; i++) {
+            bool alive = sensors[i]->checkConnection();
+            sensors[i]->setAlive(alive);
+        }
+    }
+    
+    void updateAllAlarms() {
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive()) {
+                sensors[i]->updateAlarm();
+            }
+        }
+    }
+    
+    void resetAllAlarms() {
+        for (int i = 0; i < sensorCount; i++) {
+            sensors[i]->resetAlarm();
+        }
+    }
+    
+    void calibrateAll() {
+        if (sensorCount > 0) {
+            sensors[0]->calibrate();
+            addLogEntry("Calibration performed using sensor " + sensors[0]->getName());
+        }
+    }
+    
+    void setGlobalThreshold(float threshold) {
+        globalThreshold = threshold;
+        addLogEntry("Global threshold set: " + String(globalThreshold) + " um");
+    }
+    
+    bool isAnyAlarm() {
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive() && sensors[i]->isAlarm()) return true;
+        }
+        return false;
+    }
+    
+    String getAllStatus() {
+        String result = "";
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive()) {
+                if (i > 0) result += " | ";
+                result += sensors[i]->getName() + ":" + String(sensors[i]->getValue(), 1);
+                if (sensors[i]->isAlarm()) result += "!";
+            }
+        }
+        return result;
+    }
+    
+    String getBLEMessage() {
+        String msg = "";
+        
+        if (simulationMode) {
+            for (int i = 1; i <= MAX_SENSORS; i++) {
+                if (i > 1) msg += "|";
+                msg += "Led" + String(i) + ":" + String((float)random(SIM_MIN_VALUE, SIM_MAX_VALUE) / 10, 1);
+            }
+        } else {
+            for (int i = 0; i < sensorCount; i++) {
+                if (sensors[i]->isAlive()) {
+                    if (msg.length() > 0) msg += "|";
+                    msg += sensors[i]->getName() + ":" + String(sensors[i]->getValue(), 1);
+                }
+            }
+        }
+        
+        msg += "|Threshold:" + String(globalThreshold);
+        msg += "|IsAlarm:" + String(isAnyAlarm() ? "true" : "false");
+        msg += "|MTreg:" + String(bh1750_mtreg);
+        msg += "|Exposure:" + String(uvExposureTime) + "ms";
+        
+        return msg;
+    }
+    
+    String getVerboseStatus() {
+        String status = "======= STATUS =======\r\n";
+        status += "Порог тревоги: " + String(globalThreshold) + " um\r\n";
+        status += "Чувствительность: " + String(bh1750_mtreg) + "\r\n";
+        status += "Тревога: " + String(isAnyAlarm() ? "ДА" : "НЕТ") + "\r\n";
+        // status += "Max range: ~" + String(54612.0 * (69.0 / bh1750_mtreg), 0) + " um\r\n";
+        status += "Время засвета: " + String(uvExposureTime) + " ms\r\n";
+        status += "Симуляция данных: " + String(simulationMode ? "ДА" : "НЕТ") + "\r\n";
+        status += "=====================\r\n";
+        return status;
+    }
+    
+    int getActiveCount() {
+        int count = 0;
+        for (int i = 0; i < sensorCount; i++) {
+            if (sensors[i]->isAlive()) count++;
+        }
+        return count;
+    }
+};
+
+// ========== ГЛОБАЛЬНЫЕ ОБЪЕКТЫ ==========
+OilDetectorManager detectorManager;
+
+// ========== ФУНКЦИЯ ВЫБОРА КАНАЛА ==========
+void selectChannel(uint8_t channel) {
+    if (channel > 7) return;
+    Wire.beginTransmission(TCAADDR);
+    Wire.write(1 << channel);
+    Wire.endTransmission();
+    delay(20);
+}
+
+// ========== ФУНКЦИИ УПРАВЛЕНИЯ ==========
+void setGlobalSensitivity(uint8_t mtreg) {
+    if (mtreg < 31) mtreg = 31;
+    if (mtreg > 254) mtreg = 254;
+    bh1750_mtreg = mtreg;
+    detectorManager.setSensitivity(bh1750_mtreg);
+    addLogEntry("Sensitivity changed: MTreg = " + String(bh1750_mtreg));
+}
+
+void setGlobalExposure(int timeMs) {
+    if (timeMs < MIN_EXPOSURE) timeMs = MIN_EXPOSURE;
+    if (timeMs > MAX_EXPOSURE) timeMs = MAX_EXPOSURE;
+    uvExposureTime = timeMs;
+    addLogEntry("Exposure time changed: " + String(uvExposureTime) + " ms");
+}
+
+void setGlobalThreshold(float threshold) {
+    if (threshold < 0) threshold = 0;
+    if (threshold > 1000) threshold = 1000;
+    globalThreshold = threshold;
+    addLogEntry("Global threshold set: " + String(globalThreshold) + " um");
+}
+
+// ========== ЖУРНАЛ СОБЫТИЙ ==========
+void addLogEntry(const String& entry) {
+    unsigned long seconds = millis() / 1000;
+    unsigned long minutes = seconds / 60;
+    unsigned long secs = seconds % 60;
+    char timeBuffer[20];
+    sprintf(timeBuffer, "%02lu:%02lu", minutes, secs);
+    String fullEntry = String("[") + timeBuffer + "] " + entry;
+    
+    logEntries[logIndex] = fullEntry;
+    logIndex = (logIndex + 1) % MAX_LOG_ENTRIES;
+    if (logCount < MAX_LOG_ENTRIES) logCount++;
+    Serial.println(fullEntry);
+}
+
+// ========== ОБЩАЯ СИГНАЛИЗАЦИЯ ==========
+void updateGlobalAlarm() {
+    static bool lastAlarmState = false;
+    bool anyAlarm = detectorManager.isAnyAlarm();
+    
+    if (anyAlarm != lastAlarmState) {
+        lastAlarmState = anyAlarm;
+        if (anyAlarm) {
+            addLogEntry("🔴 GLOBAL ALARM ACTIVATED");
+        } else {
+            addLogEntry("🟢 GLOBAL ALARM DEACTIVATED");
+        }
+    }
+    
+    if (anyAlarm) {
+        static unsigned long lastAlarm = 0;
+        if (millis() - lastAlarm > 1000) {
+            lastAlarm = millis();
+            digitalWrite(ALARM_PIN, !digitalRead(ALARM_PIN));
+        }
+        static unsigned long lastLedBlink = 0;
+        if (millis() - lastLedBlink > 300) {
+            lastLedBlink = millis();
+            digitalWrite(ALARM_LED_PIN, !digitalRead(ALARM_LED_PIN));
+        }
+    } else {
+        digitalWrite(ALARM_PIN, LOW);
+        digitalWrite(ALARM_LED_PIN, LOW);
+    }
+}
+
+void resetAllAlarms() {
+    detectorManager.resetAllAlarms();
+    addLogEntry("All alarms reset");
+    for (int i = 0; i < 2; i++) {
+        digitalWrite(POWER_LED_PIN, HIGH);
+        delay(200);
+        digitalWrite(POWER_LED_PIN, LOW);
+        delay(200);
+    }
+}
+
+void calibrateAllSensors() {
+    detectorManager.calibrateAll();
+}
+
+// ========== BLE КОЛЛБЭКИ ==========
+class MyServerCallbacks : public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+        deviceConnected = true;
+        addLogEntry("BLE client connected");
+    }
+    
+    void onDisconnect(BLEServer* pServer) {
+        deviceConnected = false;
+        addLogEntry("BLE client disconnected");
+        pServer->startAdvertising();
+    }
+};
+
+class MyCallbacks : public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+        String rxValue = pCharacteristic->getValue();
+        if (rxValue.length() > 0) {
+            String cmdStr = rxValue;
+            cmdStr.trim();
+            Serial.print("BLE command: ");
+            Serial.println(cmdStr);
+            
+            if (cmdStr.equalsIgnoreCase("R")) {
+                resetAllAlarms();
+                if (deviceConnected) {
+                    pTxCharacteristic->setValue("All alarms reset\r\n");
+                    pTxCharacteristic->notify();
+                }
+            }
+            else if (cmdStr.equalsIgnoreCase("C")) {
+                calibrateAllSensors();
+                if (deviceConnected) {
+                    pTxCharacteristic->setValue("Calibrated. New threshold: " + String(globalThreshold) + " um\r\n");
+                    pTxCharacteristic->notify();
+                }
+            }
+            else if (cmdStr.length() > 1 && (cmdStr[0] == 'S' || cmdStr[0] == 's')) {
+                String valStr = cmdStr.substring(1);
+                valStr.trim();
+                float newThreshold = valStr.toFloat();
+                if (newThreshold >= 0 && newThreshold <= 1000) {
+                    setGlobalThreshold(newThreshold);
+                } else if (deviceConnected) {
+                    pTxCharacteristic->setValue("Error: threshold must be 0..1000 um\r\n");
+                    pTxCharacteristic->notify();
+                }
+            }
+            else if (cmdStr.length() > 1 && (cmdStr[0] == 'T' || cmdStr[0] == 't')) {
+                String valStr = cmdStr.substring(1);
+                valStr.trim();
+                int newMtreg = valStr.toInt();
+                if (newMtreg >= 31 && newMtreg <= 254) {
+                    setGlobalSensitivity(newMtreg);
+                } else if (deviceConnected) {
+                    pTxCharacteristic->setValue("Error: MTreg must be 31..254\r\n");
+                    pTxCharacteristic->notify();
+                }
+            }
+            else if (cmdStr.length() > 1 && (cmdStr[0] == 'L' || cmdStr[0] == 'l')) {
+                String valStr = cmdStr.substring(1);
+                valStr.trim();
+                int newExposure = valStr.toInt();
+                if (newExposure >= MIN_EXPOSURE && newExposure <= MAX_EXPOSURE) {
+                    setGlobalExposure(newExposure);
+                    if (deviceConnected) {
+                        String msg = "Exposure time set to " + String(uvExposureTime) + " ms\r\n";
+                        pTxCharacteristic->setValue(msg.c_str());
+                        pTxCharacteristic->notify();
+                    }
+                } else if (deviceConnected) {
+                    String msg = "Error: exposure time must be " + String(MIN_EXPOSURE) + ".." + String(MAX_EXPOSURE) + " ms\r\n";
+                    pTxCharacteristic->setValue(msg.c_str());
+                    pTxCharacteristic->notify();
+                }
+            }
+            else if (cmdStr == "?") {
+                if (deviceConnected) {
+                    pTxCharacteristic->setValue(detectorManager.getVerboseStatus().c_str());
+                    pTxCharacteristic->notify();
+                }
+            }
+            else if (deviceConnected) {
+                pTxCharacteristic->setValue("Unknown command. Use: R, C, S<value>, T<value>, L<value>, ?\r\n");
+                pTxCharacteristic->notify();
+            }
+        }
+    }
+};
+
+// ========== НАСТРОЙКА ==========
+void setup() {
+    Serial.begin(115200);
+    
+    pinMode(UV_LED_PIN, OUTPUT);
+    pinMode(ALARM_PIN, OUTPUT);
+    pinMode(POWER_LED_PIN, OUTPUT);
+    pinMode(ALARM_LED_PIN, OUTPUT);
+    
+    digitalWrite(UV_LED_PIN, LOW);
+    digitalWrite(ALARM_PIN, LOW);
+    digitalWrite(POWER_LED_PIN, HIGH);
+    digitalWrite(ALARM_LED_PIN, LOW);
+    
+    addLogEntry("System started (6 sensors via multiplexer)");
+    addLogEntry("Initial settings: Threshold=" + String(globalThreshold) + 
+                ", MTreg=" + String(bh1750_mtreg) + 
+                ", Exposure=" + String(uvExposureTime) + "ms");
+    
+    detectorManager.begin();
+    detectorManager.setSensitivity(bh1750_mtreg);
+    
+    // Первое измерение
+    addLogEntry("First measurement...");
+    detectorManager.measureBackgroundAll();
+    digitalWrite(UV_LED_PIN, HIGH);
+    delay(uvExposureTime);
+    detectorManager.measureWithUVAll();
+    digitalWrite(UV_LED_PIN, LOW);
+    detectorManager.calculateAll();
+    addLogEntry("First measurement: " + detectorManager.getAllStatus());
+    
+    // BLE инициализация
+    BLEDevice::init("ESP32_Oil_Detector_6Z");
+    BLEServer *pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+    BLEService *pService = pServer->createService(SERVICE_UUID);
+    
+    pTxCharacteristic = pService->createCharacteristic(
+                        CHARACTERISTIC_UUID_TX,
+                        BLECharacteristic::PROPERTY_NOTIFY | 
+                        BLECharacteristic::PROPERTY_READ |
+                        BLECharacteristic::PROPERTY_INDICATE);
+    pTxCharacteristic->addDescriptor(new BLE2902());
+    
+    BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
+                         CHARACTERISTIC_UUID_RX,
+                         BLECharacteristic::PROPERTY_WRITE);
+    pRxCharacteristic->setCallbacks(new MyCallbacks());
+    
+    pService->start();
+    pServer->getAdvertising()->start();
+    addLogEntry("BLE server started");
+    
+    addLogEntry("=== SYSTEM READY ===");
+    addLogEntry(detectorManager.getVerboseStatus());
+    
+    // Отправляем первое сообщение по BLE
+    if (deviceConnected) {
+        String bleMsg = detectorManager.getBLEMessage();
+        pTxCharacteristic->setValue(bleMsg.c_str());
+        pTxCharacteristic->notify();
+    }
+}
+
+// ========== ОСНОВНОЙ ЦИКЛ ==========
+void loop() {
+    static unsigned long lastMeasure = 0;
+    static unsigned long lastBLEUpdate = 0;
+    static unsigned long lastHealthCheck = 0;
+    
+    // Измерение каждые 3 секунды
+    if (millis() - lastMeasure > 3000) {
+        detectorManager.checkAllSensorsHealth();
+
+        lastMeasure = millis();
+        
+        // 1. Измеряем фон (все датчики)
+        detectorManager.measureBackgroundAll();
+        
+        // 2. Включаем УФ
+        digitalWrite(UV_LED_PIN, HIGH);
+        delay(uvExposureTime);
+        
+        // 3. Измеряем с УФ (все датчики)
+        detectorManager.measureWithUVAll();
+        
+        // 4. Выключаем УФ
+        digitalWrite(UV_LED_PIN, LOW);
+        
+        // 5. Вычисляем значения
+        detectorManager.calculateAll();
+        
+        // 6. Обновляем тревоги
+        detectorManager.updateAllAlarms();
+        updateGlobalAlarm();
+        
+        // 7. Логирование (каждые 3 замера)
+        static int measureCount = 0;
+        measureCount++;
+        if (measureCount >= 3) {
+            measureCount = 0;
+            addLogEntry("📊 " + detectorManager.getAllStatus());
+        }
+    }
+    
+    // Отправка BLE (каждые 3 секунды)
+    if (deviceConnected && millis() - lastBLEUpdate > 3000) {
+        lastBLEUpdate = millis();
+        String bleMsg = detectorManager.getBLEMessage();
+        pTxCharacteristic->setValue(bleMsg.c_str());
+        pTxCharacteristic->notify();
+    }
+    
+    // Мигание светодиода питания
+    static unsigned long lastBlink = 0;
+    if (millis() - lastBlink > 1000) {
+        lastBlink = millis();
+        digitalWrite(POWER_LED_PIN, !digitalRead(POWER_LED_PIN));
+    }
+    
+    delay(10);
+}
