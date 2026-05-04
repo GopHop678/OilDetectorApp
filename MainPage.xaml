@@ -270,12 +270,13 @@
             <Border x:Name="ConsoleWindow"
                     Grid.Row="4"
                     Margin="20,0,20,20"
-                    BackgroundColor="#142C6E" 
+                    BackgroundColor="DarkBlue" 
                     Stroke="LightGrey"
                     StrokeShape="RoundRectangle 10"
                     StrokeThickness="3">
                 <Grid RowDefinitions="Auto, *">
-                    <Grid Grid.Row="0" 
+                    <Grid Grid.Row="0"
+                          x:Name="BtnGrid"
                           ColumnDefinitions="*, *, *"
                           Padding="10,5"
                           >

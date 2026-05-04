@@ -292,6 +292,21 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     // Красная рамка при тревоге
                     animatedGradient.GradientStops[0].Color = Colors.IndianRed;
                     animatedGradient.GradientStops[3].Color = Colors.IndianRed;
+
+                    
+                    var gradient = new LinearGradientBrush
+                    {
+                        StartPoint = new Point(0, 0),  // X=0, Y=0 (левый верх)
+                        EndPoint = new Point(0, 1)     // X=0, Y=1 (левый низ) - вертикальный градиент
+                    };
+
+                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#FF9999"), 0.0f));
+                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#FF6666"), 0.5f));
+                    gradient.GradientStops.Add(new GradientStop(themeColor, 0.75f));
+
+                    BtnGrid.Background = gradient;
+
+                    ConsoleWindow.BackgroundColor = themeColor;
                 }
                 else
                 {
@@ -309,6 +324,20 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     // Обычная рамка при отсутствии тревоги
                     animatedGradient.GradientStops[0].Color = themeColor;
                     animatedGradient.GradientStops[3].Color = themeColor;
+
+                    var gradient = new LinearGradientBrush
+                    {
+                        StartPoint = new Point(0, 0),  // X=0, Y=0 (левый верх)
+                        EndPoint = new Point(0, 1)     // X=0, Y=1 (левый низ) - вертикальный градиент
+                    };
+
+                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#3B6EC4"), 0.0f));
+                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#1A3C8C"), 0.5f));
+                    gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#142C6E"), 0.75f));
+
+                    BtnGrid.Background = gradient;
+
+                    ConsoleWindow.BackgroundColor = themeColor;
                 }
             }
         });
@@ -391,12 +420,14 @@ private async Task<bool> EnsurePermissionsAndLocation()
         //    return;
         //}
 
+        if (_isScanning) return;
+        _isScanning = true;
+
         UpdateConnectionStatus("Поиск устройства...");
 
         while (true)
         {
-            if (_connectedDevice != null || _isScanning) break;
-            _isScanning = true;
+            if (_connectedDevice != null) break;
 
             // Настройка таймаута сканирования BL устройств
             _adapter.ScanTimeout = 3000;
@@ -649,12 +680,15 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ ПЕРЕПОДКЛЮЧЕНИЯ ==========
     private async void OnReconnectClicked(object sender, EventArgs e)
     {
-        AddDataToUI("🔄 Выполняется переподключение...");
-        _ = DisconnectAndReset();    
+        if (_connectedDevice != null)
+        {
+            AddDataToUI("🔄 Выполняется переподключение...");
+            _ = DisconnectAndReset();
+        }
     }
 
 
-    // ========== ОБРАБОТЧИК КНОПКИ ПЕРЕПОДКЛЮЧЕНИЯ ==========
+    // ========== ОБРАБОТЧИК КНОПКИ СПРАВКИ ==========
     private async void OnInfoClicked(object sender, EventArgs e)
     {
         _ = SendBLEData("?");    
@@ -994,6 +1028,20 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             SensetivitySlider.MinimumTrackColor = Colors.DarkBlue;
             SensetivitySlider.ThumbColor = Colors.DarkBlue;
+
+            var gradient = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),  // X=0, Y=0 (левый верх)
+                EndPoint = new Point(0, 1)     // X=0, Y=1 (левый низ) - вертикальный градиент
+            };
+
+            gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#3B6EC4"), 0.0f));
+            gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#1A3C8C"), 0.5f));
+            gradient.GradientStops.Add(new GradientStop(Color.FromArgb("#142C6E"), 0.75f));
+
+            BtnGrid.Background = gradient;
+
+            ConsoleWindow.BackgroundColor = Colors.DarkBlue;
         });
     }
 
