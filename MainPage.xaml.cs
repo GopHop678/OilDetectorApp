@@ -766,14 +766,14 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК ПОЛЗУНКА ЧУВСТВИТЕЛЬНОСТИ ==========
     private async void SensetivitySliderValueChanged(object sender, ValueChangedEventArgs e)
     {
+        // Блокируем повторные вызовы во время отправки
+        if (_isSendingCommand) return;
+        _isSendingCommand = true;
+
         int newValue = (int)Math.Round(e.NewValue);
         int valueToSend;
         if (newValue == 0) valueToSend = 31;
         else valueToSend = 100;
-
-        // Блокируем повторные вызовы во время отправки
-        if (_isSendingCommand) return;
-        _isSendingCommand = true;
 
         // Формируем команду: T + значение
         string command = $"T{valueToSend}";
@@ -792,11 +792,11 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            int newValue = (int)Math.Round(e.NewValue);
-
             // Блокируем повторные вызовы во время отправки или подключения
             if (_isSendingCommand) return;
             _isSendingCommand = true;
+
+            int newValue = (int)Math.Round(e.NewValue);
 
             // Формируем команду: S + значение
             string command = $"S{newValue}";
@@ -889,7 +889,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             {
                 UpdateConnectionStatus("Потеря соединения");
                 AddDataToUI("🔄 Попытка автоматического переподключения...");
-                await DisconnectAndReset();
+                _ = DisconnectAndReset();
             });
         }
     }
@@ -1055,7 +1055,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
         if (sensetivityValue == 0) command = $"T{31}";
         else command = $"T{100}";
         await SendBLEData(command);
-
     }
 
     // ========== ПОЛУЧЕНИЕ РАНДОМНОЙ ЗАДЕРЖКИ ==========
