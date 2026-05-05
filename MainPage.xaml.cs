@@ -705,7 +705,10 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ СПРАВКИ ==========
     private async void OnInfoClicked(object sender, EventArgs e)
     {
+        if (_isSendingCommand) return;
+        _isSendingCommand = true;
         await SendBLEData("?");    
+        _isSendingCommand = false;
     }
 
     protected override async void OnDisappearing()
@@ -1061,14 +1064,18 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
     private async Task SyncWithServer()
     {
+        _isSendingCommand = true;
         int thresholdValue = (int)Math.Round(AlarmThreshold.Value);
         string command = $"S{thresholdValue}";
         await SendBLEData(command);
+
+        await Task.Delay(40);
 
         int sensetivityValue = (int)Math.Round(SensetivitySlider.Value);
         if (sensetivityValue == 0) command = $"T{31}";
         else command = $"T{100}";
         await SendBLEData(command);
+        _isSendingCommand = false;
     }
 
     // ========== ПОЛУЧЕНИЕ РАНДОМНОЙ ЗАДЕРЖКИ ==========
