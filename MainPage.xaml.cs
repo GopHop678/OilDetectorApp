@@ -358,7 +358,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ===================================================
     // ========== ДОБАВЛЕНИЕ ДАННЫХ В КОНСОЛЬ ============
     // ===================================================
-    private void AddDataToUI(string data, bool isCentered=false)
+    private void AddDataToUI(string data)
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
@@ -373,7 +373,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             var timestamp = DateTime.Now.ToString("HH:mm:ss");
             var dataLabel = new Label
             {
-                Text = $"[{timestamp}] {data}",
+                Text = $"[{timestamp}]",
                 TextColor = Colors.White,
                 FontSize = 13,
                 LineBreakMode = LineBreakMode.WordWrap
@@ -381,8 +381,19 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
             DataContainer.Children.Add(dataLabel);
 
+            dataLabel = new Label
+            {
+                Text = data,
+                TextColor = Colors.White,
+                FontSize = 13,
+                LineBreakMode = LineBreakMode.WordWrap,
+                HorizontalTextAlignment = TextAlignment.Center
+            };
+
+            DataContainer.Children.Add(dataLabel);
+
             // ✅ Ограничиваем количество элементов
-            while (DataContainer.Children.Count > 30)
+            while (DataContainer.Children.Count > 50)
             {
                 // Удаляем самый старый элемент (первый в списке)
                 DataContainer.Children.RemoveAt(0);
@@ -584,10 +595,10 @@ private async Task<bool> EnsurePermissionsAndLocation()
                         // Ключи датчиков
                         if (key.Contains("Led"))
                         {
-                            if (feedStringLength % 3 == 0) feedString += "\n            ";
+                            if (feedStringLength % 3 == 0 && feedStringLength != 0) feedString += "\n";
                             feedStringLength++;
 
-                            feedString += key.Replace("Led", "Датчик ") + ": " + dict[key].PadRight(10) + " ";
+                            feedString += key.Replace("Led", "Датчик ") + ": " + dict[key] + "   ";
                             string lightLevel = dict[key].Replace(".", ",");
                             ledsToReset.Remove(key);
                             switch (key)
@@ -627,9 +638,12 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 }
                 else AddDataToUI("\n" + data.Replace("|", "   "));
 
-                foreach (string led in ledsToReset)
+                if (!data.Contains("= СТАТУС ="))
                 {
-                    ResetLed(led);
+                    foreach (string led in ledsToReset)
+                    {
+                        ResetLed(led);
+                    }
                 }
             }
         }
@@ -796,7 +810,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
             if (_isSendingCommand) return;
             _isSendingCommand = true;
 
-            int newValue = (int)Math.Round(e.NewValue);
+            double newValue = Math.Round(e.NewValue, 1);
 
             // Формируем команду: S + значение
             string command = $"S{newValue}";

@@ -49,17 +49,17 @@ const char* SENSOR_NAMES[MAX_SENSORS] = {"Led1", "Led2", "Led3", "Led4", "Led5",
 // ========== НАСТРОЙКИ ДАТЧИКОВ ==========
 const int MIN_EXPOSURE = 50;
 const int MAX_EXPOSURE = 3000;
-const int ALARM_CONFIRM_COUNT = 1; // срабатываний для тревоги - 3 раза
+const int ALARM_CONFIRM_COUNT = 3; // срабатываний для тревоги - 3 раза
 const unsigned long CLEAN_DELAY = 3000; // задержка до сброса тревоги - 5000 мс
 
 // ========== НАСТРОЙКИ СИМУЛЯЦИИ ==========
 bool simulationMode = false;
-const float SIM_MIN_VALUE = 10;
-const float SIM_MAX_VALUE = 200;
+const float SIM_MIN_VALUE = 1;
+const float SIM_MAX_VALUE = 20;
 
 // ========== ГЛОБАЛЬНЫЕ НАСТРОЙКИ ==========
 uint8_t bh1750_mtreg = 31;
-uint8_t globalThreshold = 10;
+float globalThreshold = 0.1f;
 int uvExposureTime = 600;
 
 // ========== ЖУРНАЛ СОБЫТИЙ ==========
@@ -355,14 +355,14 @@ public:
     }
     
     String getVerboseStatus() {
-        String status = "======= STATUS =======\r\n";
-        status += "Порог тревоги: " + String(globalThreshold) + " um\r\n";
+        String status = "======= СТАТУС =======\r\n";
+        status += "Порог тревоги: " + String(globalThreshold) + " мкм\r\n";
         status += "Чувствительность: " + String(bh1750_mtreg) + "\r\n";
         status += "Тревога: " + String(isAnyAlarm() ? "ДА" : "НЕТ") + "\r\n";
         // status += "Max range: ~" + String(54612.0 * (69.0 / bh1750_mtreg), 0) + " um\r\n";
-        status += "Время засвета: " + String(uvExposureTime) + " ms\r\n";
+        status += "Время засвета: " + String(uvExposureTime) + " мс\r\n";
         status += "Симуляция данных: " + String(simulationMode ? "ДА" : "НЕТ") + "\r\n";
-        status += "=====================\r\n";
+        status += "======================\r\n";
         return status;
     }
     

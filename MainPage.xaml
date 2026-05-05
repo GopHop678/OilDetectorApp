@@ -191,9 +191,9 @@
 
                 <!-- Ползунок 1 -->
                 <VerticalStackLayout>
-                    <Label Text="Порог срабатывания тревоги"
+                    <Label Text="Порог срабатывания тревоги, мкм"
                        TextColor="{StaticResource ColorTextMain}"
-                       FontSize="16"
+                       FontSize="14"
                        FontAttributes="Bold"/>
 
                     <Grid>
@@ -204,13 +204,13 @@
                            HorizontalOptions="Start"/>
                         <Label Grid.Column="1"
                            x:Name="ThresholdValueLabel"
-                           Text="10"
+                           Text="1"
                            FontSize="14"
                            FontAttributes="Bold"
                            TextColor="{StaticResource ColorTextMain}"
                            HorizontalOptions="Center"/>
                         <Label Grid.Column="2"
-                           Text="100"
+                           Text="10"
                            FontSize="12"
                            TextColor="{StaticResource ColorTextThird}"
                            HorizontalOptions="End"/>
@@ -218,8 +218,8 @@
 
                     <Slider x:Name="AlarmThreshold"
                         Minimum="0"
-                        Maximum="100"
-                        Value="10"
+                        Maximum="10"
+                        Value="1"
                         MinimumTrackColor="DarkBlue"
                         MaximumTrackColor="LightGray"
                         ValueChanged="ThresholdValueChanged"
@@ -231,7 +231,7 @@
                 <VerticalStackLayout>
                     <Label Text="Чувствительность датчиков"
                        TextColor="{StaticResource ColorTextMain}"
-                       FontSize="16"
+                       FontSize="14"
                        FontAttributes="Bold"/>
 
                     <Grid>
