@@ -171,6 +171,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
         // Автоматически начинаем поиск и подключение при запуске
         _ = AutoConnectToDevice();
+        UpdateAlarmStatus(true);
     }
 
     public void Dispose()
@@ -290,8 +291,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     SensetivitySlider.ThumbColor = themeColor;
 
                     // Красная рамка при тревоге
-                    animatedGradient.GradientStops[0].Color = Colors.IndianRed;
-                    animatedGradient.GradientStops[3].Color = Colors.IndianRed;
+                    animatedGradient.GradientStops[0].Color = themeColor;
+                    animatedGradient.GradientStops[3].Color = themeColor;
 
                     
                     var gradient = new LinearGradientBrush
