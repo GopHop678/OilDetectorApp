@@ -171,7 +171,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
         // Автоматически начинаем поиск и подключение при запуске
         _ = AutoConnectToDevice();
-        UpdateAlarmStatus(true);
     }
 
     public void Dispose()
