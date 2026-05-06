@@ -562,7 +562,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         // Обновляем время последнего получения данных для отслеживания таймаута
         _lastDataReceivedTime = DateTime.Now;
-        _ = SyncWithServer();
 
         var bytes = e.Characteristic.Value;
         if (bytes != null && bytes.Length > 0)
@@ -640,6 +639,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                 if (!data.Contains("= СТАТУС ="))
                 {
+                    _ = SyncWithServer();
                     foreach (string led in ledsToReset)
                     {
                         ResetLed(led);
@@ -705,10 +705,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ СПРАВКИ ==========
     private async void OnInfoClicked(object sender, EventArgs e)
     {
-        if (_isSendingCommand) return;
-        _isSendingCommand = true;
-        await SendBLEData("?");    
-        _isSendingCommand = false;
+        await SendBLEData("?");
     }
 
     protected override async void OnDisappearing()
@@ -781,15 +778,15 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
 
     // ========== ОБРАБОТЧИК ПОЛЗУНКА ЧУВСТВИТЕЛЬНОСТИ ==========
-    private async void SensetivitySliderValueChanged(object sender, ValueChangedEventArgs e)
+    private async void SensetivitySliderValueChanged(object sender, EventArgs e)
     {
         // Блокируем повторные вызовы во время отправки
         if (_isSendingCommand) return;
         _isSendingCommand = true;
 
-        int newValue = (int)Math.Round(e.NewValue);
+        int newValue = (int)Math.Round(SensetivitySlider.Value);
         int valueToSend;
-        if (newValue == 0) valueToSend = 31;
+        if (newValue <= 0.5) valueToSend = 31;
         else valueToSend = 100;
 
         // Формируем команду: T + значение
@@ -805,26 +802,31 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
 
     // ========== ОБРАБОТЧИК ПОЛЗУНКА ПОРОГА ==========
-    private async void ThresholdValueChanged(object sender, ValueChangedEventArgs e)
+    private async void ThresholdValueChanged(object sender, EventArgs e)
     {
-        MainThread.BeginInvokeOnMainThread(async () =>
-        {
-            // Блокируем повторные вызовы во время отправки или подключения
-            if (_isSendingCommand) return;
-            _isSendingCommand = true;
+        // Блокируем повторные вызовы во время отправки или подключения
+        if (_isSendingCommand) return;
+        _isSendingCommand = true;
 
-            double newValue = Math.Round(e.NewValue, 1);
+        double newValue = Math.Round(AlarmThreshold.Value, 1);
 
-            // Формируем команду: S + значение
-            string command = $"S{newValue}";
-            await SendBLEData(command);
+        // Формируем команду: S + значение
+        string command = $"S{newValue}".Replace(",", ".");
+        await SendBLEData(command);
 
-            // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
-            ThresholdValueLabel.Text = newValue.ToString();
-            AlarmThreshold.Value = newValue;
+        // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
+        ThresholdValueLabel.Text = newValue.ToString().Replace(",", ".");
+        AlarmThreshold.Value = newValue;
 
-            _isSendingCommand = false;
-        });
+        _isSendingCommand = false;
+    }
+
+
+    // ========== ОБРАБОТЧИК ПОЛЗУНКА ПОРОГА ==========
+    private async void ThresholdValueChanging(object sender, ValueChangedEventArgs e)
+    {
+        double newValue = Math.Round(e.NewValue, 1);
+        ThresholdValueLabel.Text = newValue.ToString().Replace(",", ".");
     }
 
 
@@ -1065,14 +1067,14 @@ private async Task<bool> EnsurePermissionsAndLocation()
     private async Task SyncWithServer()
     {
         _isSendingCommand = true;
-        int thresholdValue = (int)Math.Round(AlarmThreshold.Value);
-        string command = $"S{thresholdValue}";
+        double thresholdValue = Math.Round(AlarmThreshold.Value, 1);
+        string command = $"S{thresholdValue}".Replace(",", ".");
         await SendBLEData(command);
 
         await Task.Delay(40);
 
         int sensetivityValue = (int)Math.Round(SensetivitySlider.Value);
-        if (sensetivityValue == 0) command = $"T{31}";
+        if (sensetivityValue <= 0.5) command = $"T{31}";
         else command = $"T{100}";
         await SendBLEData(command);
         _isSendingCommand = false;

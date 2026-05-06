@@ -222,7 +222,8 @@
                         Value="1"
                         MinimumTrackColor="DarkBlue"
                         MaximumTrackColor="LightGray"
-                        ValueChanged="ThresholdValueChanged"
+                        DragCompleted="ThresholdValueChanged"
+                        ValueChanged="ThresholdValueChanging"
                         ThumbColor="DarkBlue"/>
 
                 </VerticalStackLayout>
@@ -258,7 +259,7 @@
                             Minimum="0"
                             Maximum="1"
                             Value="0"
-                            ValueChanged="SensetivitySliderValueChanged"
+                            DragCompleted="SensetivitySliderValueChanged"
                             MinimumTrackColor="DarkBlue"
                             MaximumTrackColor="LightGray"
                             ThumbColor="DarkBlue"/>
