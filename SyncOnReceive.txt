@@ -1,4 +1,4 @@
-﻿using Plugin.BLE;
+using Plugin.BLE;
 using Plugin.BLE.Abstractions.Contracts;
 using Plugin.BLE.Abstractions.EventArgs;
 using System.Text;
@@ -562,12 +562,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ===================================================
     private void OnDataReceived(object sender, CharacteristicUpdatedEventArgs e)
     {
-        if (_isToSyncOnce)
-        {
-            _ = SyncWithServer();
-            _isToSyncOnce = false;
-        }
-
         // Обновляем время последнего получения данных для отслеживания таймаута
         _lastDataReceivedTime = DateTime.Now;
 
@@ -647,6 +641,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                 if (!data.Contains("= СТАТУС ="))
                 {
+                    _ = SyncWithServer();
                     foreach (string led in ledsToReset)
                     {
                         ResetLed(led);
