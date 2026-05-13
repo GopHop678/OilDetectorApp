@@ -187,6 +187,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
     {
         try
         {
+            ResetGui();
+
             // Отписываемся от событий
             if (_notifyCharacteristic != null)
             {
@@ -220,7 +222,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
             _isSendingCommand = false;
             _isToSyncOnce = true;
 
-            ResetGui();
             _ = TryReconnect();
         }
         catch (Exception) 
