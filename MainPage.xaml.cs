@@ -578,10 +578,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
             var data = Encoding.UTF8.GetString(bytes);
             data = data.Trim().Replace("\0", "");
 
-
-            AddDataToUI(data);
-
-
             if (!string.IsNullOrWhiteSpace(data))
             {
                 List<string> ledsToReset = [
@@ -590,13 +586,14 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 if (data.Contains("Led"))
                 {
                     string[] refinedData = data.Split("|");
+
                     // Создаём словарь
                     var dict = new Dictionary<string, List<string>>();
                     foreach (string pair in refinedData)
                     {
                         string[] pairValues = pair.Split(':');
                         if (pairValues.Length > 2) dict[pairValues[0]] = [pairValues[1], pairValues[2]];
-                        if (pairValues.Length > 1) dict[pairValues[0]] = [pairValues[1]];
+                        else if (pairValues.Length > 1) dict[pairValues[0]] = [pairValues[1]];
                     }
 
                     string threshold = dict["Threshold"][0].Replace(".", ",");
@@ -611,8 +608,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                             if (feedStringLength % 3 == 0 && feedStringLength != 0) feedString += "\n";
                             feedStringLength++;
 
-                            feedString += key.Replace("Led", "Датчик ") + ": " + (Double.Parse(dict[key][0]) / _thresholdMultiplier).ToString() + "   ";
-                            string lightLevel = (Double.Parse(dict[key][0]) / _thresholdMultiplier).ToString().Replace(".", ",");
+                            string lightLevel = (Double.Parse(dict[key][0].Replace(".", ",")) / _thresholdMultiplier).ToString().Replace(".", ",");
+                            feedString += key.Replace("Led", "Датчик ") + ": " + lightLevel + "   ";
                             string isSensorAlarm = dict[key][1];
                             ledsToReset.Remove(key);
                             switch (key)
