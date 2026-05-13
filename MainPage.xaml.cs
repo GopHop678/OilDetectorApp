@@ -718,7 +718,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
     // ========== ОБРАБОТЧИК КНОПКИ СПРАВКИ ==========
     private async void OnInfoClicked(object sender, EventArgs e)
     {
-        await SendBLEData("?");
+        if (_connectedDevice != null)  await SendBLEData("?");
     }
 
     protected override async void OnDisappearing()
