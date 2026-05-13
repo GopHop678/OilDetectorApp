@@ -1,4 +1,4 @@
-﻿using Plugin.BLE;
+using Plugin.BLE;
 using Plugin.BLE.Abstractions.Contracts;
 using Plugin.BLE.Abstractions.EventArgs;
 using System.Text;
@@ -578,10 +578,6 @@ private async Task<bool> EnsurePermissionsAndLocation()
             var data = Encoding.UTF8.GetString(bytes);
             data = data.Trim().Replace("\0", "");
 
-
-            AddDataToUI(data);
-
-
             if (!string.IsNullOrWhiteSpace(data))
             {
                 List<string> ledsToReset = [
@@ -591,15 +587,14 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 {
                     string[] refinedData = data.Split("|");
                     // Создаём словарь
-                    var dict = new Dictionary<string, List<string>>();
+                    var dict = new Dictionary<string, string>();
                     foreach (string pair in refinedData)
                     {
                         string[] pairValues = pair.Split(':');
-                        if (pairValues.Length > 2) dict[pairValues[0]] = [pairValues[1], pairValues[2]];
-                        if (pairValues.Length > 1) dict[pairValues[0]] = [pairValues[1]];
+                        if (pairValues.Length > 1) dict[pairValues[0]] = pairValues[1];
                     }
 
-                    string threshold = dict["Threshold"][0].Replace(".", ",");
+                    string threshold = dict["Threshold"].Replace(".", ",");
                     string feedString = " ";
                     int feedStringLength = 0;
 
@@ -611,29 +606,28 @@ private async Task<bool> EnsurePermissionsAndLocation()
                             if (feedStringLength % 3 == 0 && feedStringLength != 0) feedString += "\n";
                             feedStringLength++;
 
-                            feedString += key.Replace("Led", "Датчик ") + ": " + (Double.Parse(dict[key][0]) / _thresholdMultiplier).ToString() + "   ";
-                            string lightLevel = (Double.Parse(dict[key][0]) / _thresholdMultiplier).ToString().Replace(".", ",");
-                            string isSensorAlarm = dict[key][1];
+                            feedString += key.Replace("Led", "Датчик ") + ": " + dict[key] + "   ";
+                            string lightLevel = dict[key].Replace(".", ",");
                             ledsToReset.Remove(key);
                             switch (key)
                             {
                                 case "Led1":
-                                    SwitchLed(Led1, lightLevel, threshold, isSensorAlarm);
+                                    SwitchLed(Led1, lightLevel, threshold);
                                     break;
                                 case "Led2":
-                                    SwitchLed(Led2, lightLevel, threshold, isSensorAlarm);
+                                    SwitchLed(Led2, lightLevel, threshold);
                                     break;
                                 case "Led3":
-                                    SwitchLed(Led3, lightLevel, threshold, isSensorAlarm);
+                                    SwitchLed(Led3, lightLevel, threshold);
                                     break;
                                 case "Led4":
-                                    SwitchLed(Led4, lightLevel, threshold, isSensorAlarm);
+                                    SwitchLed(Led4, lightLevel, threshold);
                                     break;
                                 case "Led5":
-                                    SwitchLed(Led5, lightLevel, threshold, isSensorAlarm);
+                                    SwitchLed(Led5, lightLevel, threshold);
                                     break;
                                 case "Led6":
-                                    SwitchLed(Led6, lightLevel, threshold, isSensorAlarm);
+                                    SwitchLed(Led6, lightLevel, threshold);
                                     break;
                                 default:
                                     break;
@@ -645,7 +639,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     //feedString += "Тревога: " + (dict["IsAlarm"] == "true" ? "Да" : "Нет") + "\n";
                     //feedString += "Чувствительность: " + dict["MTreg"] + "\n";
 
-                    if (dict["IsAlarm"][0] == "true") UpdateAlarmStatus(true);
+                    if (dict["IsAlarm"] == "true") UpdateAlarmStatus(true);
                     else UpdateAlarmStatus();
 
                     AddDataToUI(feedString);
@@ -930,18 +924,15 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
 
     // ========== СМЕНА ЦВЕТА ДАТЧИКОВ ==========
-    private void SwitchLed(Border led, string lightlevel, string threshold, string isSensorAlarm)
+    private void SwitchLed(Border led, string lightlevel, string threshold)
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            if (isSensorAlarm == "true") SetLedColorWithGradient(led, (Color)Resources["ColorLedRed"]);
-            if (isSensorAlarm == "false") SetLedColorWithGradient(led, (Color)Resources["ColorLedBlue"]);
-
-            //if (float.Parse(lightlevel) < float.Parse(threshold))
-            //{
-            //    SetLedColorWithGradient(led, (Color)Resources["ColorLedBlue"]);
-            //}
-            //else SetLedColorWithGradient(led, (Color)Resources["ColorLedRed"]);
+            if (float.Parse(lightlevel) < float.Parse(threshold))
+            {
+                SetLedColorWithGradient(led, (Color)Resources["ColorLedBlue"]);
+            }
+            else SetLedColorWithGradient(led, (Color)Resources["ColorLedRed"]);
         });
     }
 

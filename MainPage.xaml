@@ -204,7 +204,7 @@
                            HorizontalOptions="Start"/>
                         <Label Grid.Column="1"
                            x:Name="ThresholdValueLabel"
-                           Text="1"
+                           Text="0.1"
                            FontSize="14"
                            FontAttributes="Bold"
                            TextColor="{StaticResource ColorTextMain}"
@@ -219,7 +219,7 @@
                     <Slider x:Name="AlarmThreshold"
                         Minimum="0"
                         Maximum="10"
-                        Value="1"
+                        Value="0.1"
                         MinimumTrackColor="DarkBlue"
                         MaximumTrackColor="LightGray"
                         DragCompleted="ThresholdValueChanged"
