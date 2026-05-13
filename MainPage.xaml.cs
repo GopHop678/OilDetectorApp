@@ -608,7 +608,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                             if (feedStringLength % 3 == 0 && feedStringLength != 0) feedString += "\n";
                             feedStringLength++;
 
-                            string lightLevel = (Double.Parse(dict[key][0].Replace(".", ",")) / _thresholdMultiplier).ToString().Replace(".", ",");
+                            string lightLevel = Math.Round(Double.Parse(dict[key][0].Replace(".", ",")) / _thresholdMultiplier, 1).ToString().Replace(".", ",");
+                            if (lightLevel == "0") lightLevel = "0,0";
                             feedString += key.Replace("Led", "Датчик ") + ": " + lightLevel + "   ";
                             string isSensorAlarm = dict[key][1];
                             ledsToReset.Remove(key);
