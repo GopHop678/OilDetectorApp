@@ -30,7 +30,7 @@ public partial class MainPage : ContentPage, IDisposable
     private bool _isConnecting = false;
     private bool _isSendingCommand = false;
     private bool _isToSyncOnce = true;
-    private double _thresholdMultiplier = 50d;
+    private double _thresholdMultiplier = 100d;
 
     // Для отслеживания таймаута данных
     private DateTime _lastDataReceivedTime;
