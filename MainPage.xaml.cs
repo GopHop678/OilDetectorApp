@@ -311,6 +311,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     BtnGrid.Background = gradient;
 
                     ConsoleWindow.BackgroundColor = themeColor;
+
+                    AddDataToUI("🔴 === ТРЕВОГА АКТИВИРОВАНА === 🔴");
                 }
                 else
                 {
@@ -342,6 +344,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     BtnGrid.Background = gradient;
 
                     ConsoleWindow.BackgroundColor = themeColor;
+                    AddDataToUI("🟢 === СБРОС ТРЕВОГИ === 🟢");
                 }
             }
         });
@@ -374,7 +377,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
                 DataContainer.Children.Clear();
             }
 
-            var timestamp = DateTime.Now.ToString("HH:mm:ss");
+            var timestamp = DateTime.Now.ToString("dd.MM.yy HH:mm:ss");
             var dataLabel = new Label
             {
                 Text = $"[{timestamp}]",

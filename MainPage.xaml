@@ -307,7 +307,7 @@
 
                         <!-- Заголовок в столбце 1 (центр) -->
                         <Label Grid.Column="1"
-                               Text="📊 Консоль:" 
+                               Text="📊 Журнал событий:" 
                                TextColor="LightGray"
                                HorizontalTextAlignment="Center"
                                FontAttributes="Bold"
