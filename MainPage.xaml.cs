@@ -30,6 +30,7 @@ public partial class MainPage : ContentPage, IDisposable
     private bool _isConnecting = false;
     private bool _isSendingCommand = false;
     private bool _isToSyncOnce = true;
+    private bool _isAlarmStatus = false;
     private double _thresholdMultiplier = 100d;
 
     // Для отслеживания таймаута данных
@@ -312,7 +313,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
 
                     ConsoleWindow.BackgroundColor = themeColor;
 
-                    AddDataToUI("🔴 === ТРЕВОГА АКТИВИРОВАНА === 🔴");
+                    if (_isAlarmStatus == false) AddDataToUI("🔴 === ТРЕВОГА АКТИВИРОВАНА === 🔴");
+                    _isAlarmStatus = true;
                 }
                 else
                 {
@@ -344,7 +346,8 @@ private async Task<bool> EnsurePermissionsAndLocation()
                     BtnGrid.Background = gradient;
 
                     ConsoleWindow.BackgroundColor = themeColor;
-                    AddDataToUI("🟢 === СБРОС ТРЕВОГИ === 🟢");
+                    if (_isAlarmStatus) AddDataToUI("🟢 === СБРОС ТРЕВОГИ === 🟢");
+                    _isAlarmStatus = false;
                 }
             }
         });
@@ -831,9 +834,7 @@ private async Task<bool> EnsurePermissionsAndLocation()
         string command = $"S{newValue}".Replace(",", ".");
         await SendBLEData(command);
 
-        // Ставим значения вручную для избежания рассинхрона на серваке и клиенте
-        ThresholdValueLabel.Text = newValue.ToString().Replace(",", ".");
-        AlarmThreshold.Value = newValue / _thresholdMultiplier;
+        ThresholdValueLabel.Text = Math.Round(AlarmThreshold.Value, 1).ToString().Replace(",", ".");
 
         _isSendingCommand = false;
     }
